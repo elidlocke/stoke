@@ -4,8 +4,8 @@
   --text: #17171c;
   --muted: #6b6b76;
   --border: #e4e4e9;
-  --accent: #5b4cdb;
-  --accent-soft: #eeebfc;
+  --accent: #c2410c;
+  --accent-soft: #ffedd5;
   --ok: #17803d;
   --ok-soft: #e3f5e9;
   --bad: #b42318;
@@ -23,8 +23,8 @@
     --text: #ececf1;
     --muted: #9a9aa6;
     --border: #2c2c34;
-    --accent: #a89cff;
-    --accent-soft: #2a2550;
+    --accent: #fb923c;
+    --accent-soft: #3d2410;
     --ok: #5fd28a;
     --ok-soft: #173424;
     --bad: #ff8a80;
@@ -51,6 +51,161 @@ main {
   max-width: 1100px;
   margin: 0 auto;
   padding: 32px 16px 64px;
+}
+
+/* ---- App header and navigation ---- */
+
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.app-header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text);
+  padding: 14px 0;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.app-header nav {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.app-header nav a {
+  padding: 14px 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.app-header nav a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.app-header nav a.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .app-header-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .brand {
+    padding-bottom: 0;
+  }
+  .app-header nav {
+    margin: 0 -10px;
+  }
+}
+
+/* ---- Overview cards ---- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  min-width: 0;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.card-header h2 a {
+  color: var(--text);
+}
+.card-more {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.card-stat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 12px;
+}
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.card-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.card-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-detail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+/* ---- Chips ---- */
+
+.chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  background: var(--neutral-soft);
+  color: var(--muted);
+  vertical-align: 1px;
+}
+.chip.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.chip.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.chip.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.chip.accent {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 a {
@@ -175,6 +330,12 @@ th {
 }
 .right {
   text-align: right;
+}
+/* Long text such as plan descriptions wraps instead of widening the table. */
+td.wrap {
+  white-space: normal;
+  min-width: 180px;
+  max-width: 280px;
 }
 .rank {
   width: 3em;

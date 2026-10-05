@@ -1,21 +1,31 @@
 """Regression guard: sensitive Stripe data must never appear in API responses."""
 
+import time
+
 import pytest
 import stripe
 from fastapi.testclient import TestClient
 
 from app import fetch, fx, service
-from app.aggregate import normalize_payment
+from app.aggregate import normalize_payment, normalize_subscription
 from app.main import app
 from app.stripe_client import Account, AccountScope
-from tests.conftest import make_charge, make_failed_pi, make_invoice, make_pi
+from tests.conftest import (
+    make_canceled_subscription,
+    make_charge,
+    make_failed_pi,
+    make_invoice,
+    make_pi,
+    make_subscription,
+)
 
 FORBIDDEN = [
     "4242", "last4", "fingerprint", "visa", "exp_year",
     "address", "SENSITIVE", "phone", "+1555",
     "metadata", "receipt_url", "pay.stripe.com", "invoice.stripe.com", "secret",
-    "pi_", "pm_", "cus_", "txn_", "in_1", "ch_", "fee",
+    "pi_", "pm_", "cus_", "txn_", "in_1", "ch_", "\"fee\"",  # the JSON key; "feedback" is allowed
     "Ada Lovelace", "rk_test",
+    "sub_", "si_", "price_", "comment",
 ]
 
 PLATFORM = Account("acct_platform", "Platform", "usd", "platform", client=None)
@@ -42,8 +52,18 @@ def client(monkeypatch):
     async def get_rates(pairs, target):
         return {p: 1.25 for p in pairs}
 
+    async def subscriptions(account, refresh=False):
+        now = int(time.time())
+        return [
+            normalize_subscription(make_canceled_subscription(
+                id=f"sub_gone_{account.id}", start_date=now - 3 * 86400, canceled_at=now - 86400, ended_at=now - 86400,
+            ), account.id),
+            normalize_subscription(make_subscription(id=f"sub_new_{account.id}", start_date=now - 3600), account.id),
+        ]
+
     monkeypatch.setattr(service, "get_scope", scope)
     monkeypatch.setattr(fetch, "payments_since", payments_since)
+    monkeypatch.setattr(fetch, "subscriptions", subscriptions)
     monkeypatch.setattr(fx, "get_rates", get_rates)
     return TestClient(app, raise_server_exceptions=False)
 
@@ -90,13 +110,46 @@ def test_accounts_shape(client):
     assert_clean(resp.text)
 
 
+def test_cancellations_shape(client):
+    resp = client.get("/api/cancellations", params={"window": "7d"})
+    assert resp.status_code == 200
+    assert_clean(resp.text)  # notably, the customer's free-text cancellation comment
+    body = resp.json()
+    assert sorted(c["account_id"] for c in body["customers"]) == ["acct_conn", "acct_platform"]
+    entry = body["customers"][0]
+    assert (entry["reason"], entry["feedback"], entry["ended"]) == ("cancellation_requested", "too_expensive", True)
+    assert entry["lifetime_value"] == 11250  # across both accounts
+    assert entry["resubscribed"] is True  # the same email has a new subscription
+
+
+def test_new_subscribers_shape(client):
+    resp = client.get("/api/new-subscribers")
+    assert resp.status_code == 200
+    assert_clean(resp.text)
+    entry = resp.json()["customers"][0]
+    assert (entry["email"], entry["status"], entry["returning"]) == ("ada@example.com", "active", True)
+    assert entry["plan"] == "1 × Monthly (at $8.00 / month)"
+
+
+def test_anniversaries_shape(client):
+    resp = client.get("/api/anniversaries", params={"window": "3m"})
+    assert resp.status_code == 200
+    assert_clean(resp.text)
+    assert resp.json()["customers"] == []  # the fixture's payments are from mid-2025
+
+
+def test_invalid_window_rejected(client):
+    assert client.get("/api/cancellations", params={"window": "all"}).status_code == 422
+
+
 def test_invalid_email_rejected(client):
     assert client.get("/api/customers/not-an-email").status_code == 422
     assert client.get("/api/customers/x' OR email:'y").status_code == 422
 
 
 def test_unknown_account_404(client):
-    assert client.get("/api/leaderboard", params={"account": "acct_nope"}).status_code == 404
+    for path in ["/api/leaderboard", "/api/cancellations", "/api/anniversaries", "/api/new-subscribers"]:
+        assert client.get(path, params={"account": "acct_nope"}).status_code == 404
 
 
 def test_stripe_error_is_generic(client, monkeypatch):

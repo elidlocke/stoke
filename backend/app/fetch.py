@@ -1,16 +1,19 @@
-"""Live Stripe reads, returning normalized Payments."""
+"""Live Stripe reads, returning normalized Payments and Subscriptions."""
 
 import asyncio
 from dataclasses import dataclass
 
+import stripe
 from cachetools import TTLCache
 
-from app.aggregate import Payment, invoices_by_payment_intent, normalize_payment
+from app.aggregate import Payment, Subscription, invoices_by_payment_intent, normalize_payment, normalize_subscription
 from app.config import get_settings
-from app.stripe_client import Account
+from app.stripe_client import Account, MissingPermission
 
 PI_EXPAND = ["data.customer", "data.latest_charge.balance_transaction", "data.latest_charge.refunds"]
 INVOICE_EXPAND = ["data.payments"]
+# The latest invoice supplies the plan name and a copy of the email that survives customer deletion.
+SUBSCRIPTION_EXPAND = ["data.customer", "data.latest_invoice"]
 
 # A payment can be attempted well after its invoice was created (dunning retries), so invoices
 # are fetched from a little before the window to still find the invoice for every payment.
@@ -24,6 +27,7 @@ class _CachedWindow:
 
 
 _window_cache: TTLCache[str, _CachedWindow] | None = None
+_subscription_cache: TTLCache[str, list[Subscription]] | None = None
 
 
 def _cache() -> TTLCache[str, _CachedWindow]:
@@ -33,8 +37,16 @@ def _cache() -> TTLCache[str, _CachedWindow]:
     return _window_cache
 
 
+def _subscriptions_cache() -> TTLCache[str, list[Subscription]]:
+    global _subscription_cache
+    if _subscription_cache is None:
+        _subscription_cache = TTLCache(maxsize=1024, ttl=get_settings().cache_ttl_seconds)
+    return _subscription_cache
+
+
 def clear_cache() -> None:
     _cache().clear()
+    _subscriptions_cache().clear()
 
 
 def _covers(cached_since: int | None, since: int | None) -> bool:
@@ -77,3 +89,21 @@ async def payments_since(account: Account, since: int | None, refresh: bool = Fa
     ]
     cache[account.id] = _CachedWindow(since=since, payments=payments)
     return payments
+
+
+async def subscriptions(account: Account, refresh: bool = False) -> list[Subscription]:
+    """Every subscription on `account`, in any status, including canceled ones."""
+    cache = _subscriptions_cache()
+    if not refresh and (cached := cache.get(account.id)) is not None:
+        return cached
+
+    params = {"limit": 100, "status": "all", "expand": SUBSCRIPTION_EXPAND}
+    try:
+        page = await account.client.v1.subscriptions.list_async(params, account.options)
+        raw = await _collect(page)
+    except stripe.PermissionError as exc:
+        raise MissingPermission("Subscriptions") from exc
+
+    subs = [normalize_subscription(s, account.id) for s in raw]
+    cache[account.id] = subs
+    return subs

@@ -4,7 +4,16 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import EmailStr, TypeAdapter, ValidationError
 
 from app import service
-from app.models import AccountsResponse, CustomerProfileResponse, LeaderboardResponse, Period
+from app.models import (
+    AccountsResponse,
+    AnniversariesResponse,
+    CancellationsResponse,
+    CustomerProfileResponse,
+    LeaderboardResponse,
+    NewSubscribersResponse,
+    Period,
+    Window,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -23,10 +32,28 @@ async def get_leaderboard(
     account: str | None = None,
     refresh: bool = False,
 ) -> LeaderboardResponse:
-    try:
-        return await service.leaderboard(period, limit, account, refresh)
-    except service.UnknownAccount:
-        raise HTTPException(404, "Unknown account")
+    return await service.leaderboard(period, limit, account, refresh)
+
+
+@router.get("/cancellations")
+async def get_cancellations(
+    window: Window = "1m", account: str | None = None, refresh: bool = False
+) -> CancellationsResponse:
+    return await service.cancellations(window, account, refresh)
+
+
+@router.get("/anniversaries")
+async def get_anniversaries(
+    window: Window = "1m", account: str | None = None, refresh: bool = False
+) -> AnniversariesResponse:
+    return await service.anniversaries(window, account, refresh)
+
+
+@router.get("/new-subscribers")
+async def get_new_subscribers(
+    window: Window = "1m", account: str | None = None, refresh: bool = False
+) -> NewSubscribersResponse:
+    return await service.new_subscribers(window, account, refresh)
 
 
 @router.get("/customers/{email}")

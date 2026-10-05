@@ -5,9 +5,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import service
 from app.config import get_settings
 from app.routers import customers
-from app.stripe_client import NoCredentials
+from app.stripe_client import MissingPermission, NoCredentials
 
 log = logging.getLogger("stoke")
 
@@ -31,6 +32,16 @@ async def stripe_error(_: Request, exc: stripe.StripeError) -> JSONResponse:
 @app.exception_handler(NoCredentials)
 async def no_credentials(_: Request, exc: NoCredentials) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=503)
+
+
+@app.exception_handler(MissingPermission)
+async def missing_permission(_: Request, exc: MissingPermission) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=503)
+
+
+@app.exception_handler(service.UnknownAccount)
+async def unknown_account(_: Request, exc: service.UnknownAccount) -> JSONResponse:
+    return JSONResponse({"detail": "Unknown account"}, status_code=404)
 
 
 @app.exception_handler(Exception)

@@ -9,6 +9,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 Period = Literal["1m", "3m", "6m", "12m", "all"]
+# Lookback window for the event lists: past week, month or 3 months.
+Window = Literal["7d", "1m", "3m"]
 
 
 class _Out(BaseModel):
@@ -82,3 +84,60 @@ class CustomerProfileResponse(_Out):
     reporting_currency: str
     summary: CustomerSummary
     timeline: list[TimelineEventOut]  # oldest first
+
+
+class CancellationEntry(_Out):
+    email: str
+    account_id: str
+    plan: str | None
+    started: int  # unix seconds
+    canceled_at: int  # when the cancellation was made
+    ends_at: int | None  # when access ended, or will end
+    ended: bool  # False: canceled at period end, still active until ends_at
+    # Stripe's cancellation_details: reason is cancellation_requested, payment_failed or payment_disputed;
+    # feedback is the customer's chosen reason, e.g. too_expensive. The free-text comment is never returned.
+    reason: str | None
+    feedback: str | None
+    lifetime_value: int  # net paid across all time, minor units of reporting_currency
+    resubscribed: bool  # has another current subscription
+
+
+class CancellationsResponse(_Out):
+    window: Window
+    since: int
+    reporting_currency: str
+    customers: list[CancellationEntry]  # most recent cancellation first
+
+
+class AnniversaryEntry(_Out):
+    email: str
+    years: int  # 1 for the first anniversary, 2 for the second, ...
+    anniversary: int  # unix seconds
+    first_paid: int
+    last_paid: int
+    lifetime_value: int  # minor units of reporting_currency
+    payment_count: int
+    subscribed: bool  # has a current subscription
+    accounts: list[str]
+
+
+class AnniversariesResponse(_Out):
+    window: Window
+    since: int
+    reporting_currency: str
+    customers: list[AnniversaryEntry]  # most recent anniversary first
+
+
+class NewSubscriberEntry(_Out):
+    email: str
+    account_id: str
+    plan: str | None
+    started: int  # unix seconds
+    status: str  # Stripe subscription status: active, trialing, past_due, canceled, ...
+    returning: bool  # had an earlier subscription that ended before this one started
+
+
+class NewSubscribersResponse(_Out):
+    window: Window
+    since: int
+    customers: list[NewSubscriberEntry]  # most recent first

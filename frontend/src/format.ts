@@ -28,3 +28,8 @@ export function formatRelative(unixSeconds: number, now = Date.now() / 1000): st
   }
   return 'just now'
 }
+
+/** "1 year", "3 years". */
+export function formatYears(years: number): string {
+  return years === 1 ? '1 year' : `${years} years`
+}

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { api, type CustomerProfile as Profile, type EventKind, type TimelineEvent } from '../api'
 import { Money } from '../components/Money'
 import { formatDate, formatMonth, formatRelative } from '../format'
@@ -67,9 +67,7 @@ export function CustomerProfile() {
 
   return (
     <>
-      <Link to="/" className="back">
-        ← Top customers
-      </Link>
+      <BackLink />
       <header className="page-header">
         <h1>{email}</h1>
       </header>
@@ -110,6 +108,26 @@ export function CustomerProfile() {
         </>
       )}
     </>
+  )
+}
+
+/** Returns to whichever list the customer was opened from; to the overview on a direct visit. */
+function BackLink() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const hasHistory = location.key !== 'default'
+  return (
+    <a
+      href="/"
+      className="back"
+      onClick={(e) => {
+        e.preventDefault()
+        if (hasHistory) navigate(-1)
+        else navigate('/')
+      }}
+    >
+      ← Back
+    </a>
   )
 }
 

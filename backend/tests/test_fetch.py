@@ -5,9 +5,11 @@ from urllib.parse import parse_qs
 import httpx
 import respx
 
+import pytest
+
 from app import fetch
-from app.stripe_client import Account, make_client
-from tests.conftest import make_failed_pi, make_invoice, make_pi
+from app.stripe_client import Account, MissingPermission, make_client
+from tests.conftest import make_canceled_subscription, make_failed_pi, make_invoice, make_pi, make_subscription
 
 CONNECTED = Account("acct_conn", "Creator", "usd", "connected", make_client("sk_test_platform"))
 PLATFORM = Account("acct_platform", "Platform", "usd", "platform", make_client("sk_test_platform"))
@@ -15,6 +17,7 @@ OWN = Account("acct_own", "Own", "usd", "own_key", make_client("rk_test_creator"
 
 PI_URL = "https://api.stripe.com/v1/payment_intents"
 INVOICE_URL = "https://api.stripe.com/v1/invoices"
+SUBSCRIPTION_URL = "https://api.stripe.com/v1/subscriptions"
 
 
 def page(data, url, has_more=False):
@@ -76,3 +79,33 @@ async def test_own_key_account_uses_its_own_key_without_account_header():
     req = route.calls[0].request
     assert req.headers["Authorization"] == "Bearer rk_test_creator"
     assert "Stripe-Account" not in req.headers
+
+
+@respx.mock
+async def test_subscriptions_include_canceled_and_are_cached():
+    route = respx.get(SUBSCRIPTION_URL).mock(return_value=httpx.Response(200, json=page(
+        [make_subscription(), make_canceled_subscription(id="sub_2")], "/v1/subscriptions"
+    )))
+
+    subs = await fetch.subscriptions(CONNECTED)
+
+    assert [(s.id, s.status) for s in subs] == [("sub_1", "active"), ("sub_2", "canceled")]
+    req = route.calls[0].request
+    assert req.headers["Stripe-Account"] == "acct_conn"
+    q = query(route.calls[0])
+    assert q["status"] == ["all"]  # Stripe omits canceled subscriptions by default
+    assert [q[f"expand[{i}]"][0] for i in range(2)] == fetch.SUBSCRIPTION_EXPAND
+
+    await fetch.subscriptions(CONNECTED)
+    assert route.call_count == 1
+    await fetch.subscriptions(CONNECTED, refresh=True)
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_subscriptions_without_read_permission():
+    respx.get(SUBSCRIPTION_URL).mock(return_value=httpx.Response(403, json={
+        "error": {"type": "invalid_request_error", "message": "restricted key lacks rak_subscription_read"}
+    }))
+    with pytest.raises(MissingPermission, match="Subscriptions: Read"):
+        await fetch.subscriptions(OWN)

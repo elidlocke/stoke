@@ -121,6 +121,40 @@ def make_invoice(pi_id: str, **overrides) -> dict:
     return invoice
 
 
+def make_subscription(**overrides) -> dict:
+    """An active subscription with customer + latest_invoice expanded, including sensitive fields."""
+    sub = {
+        "id": "sub_1",
+        "object": "subscription",
+        "status": "active",
+        "created": 1_750_000_000,
+        "start_date": 1_750_000_000,
+        "canceled_at": None,
+        "cancel_at": None,
+        "cancel_at_period_end": False,
+        "ended_at": None,
+        "cancellation_details": {"reason": None, "feedback": None, "comment": None},
+        "customer": copy.deepcopy(SENSITIVE_CUSTOMER),
+        "default_payment_method": "pm_SENSITIVE",
+        "metadata": {"internal_note": "SENSITIVE_METADATA"},
+        "items": {"data": [{"id": "si_1", "price": {"id": "price_1", "nickname": None}}]},
+        "latest_invoice": make_invoice("pi_1"),
+    }
+    sub.update(overrides)
+    return sub
+
+
+def make_canceled_subscription(**overrides) -> dict:
+    return make_subscription(**{
+        "status": "canceled",
+        "canceled_at": 1_760_000_000,
+        "ended_at": 1_760_000_000,
+        "cancellation_details": {
+            "reason": "cancellation_requested", "feedback": "too_expensive", "comment": "SENSITIVE comment",
+        },
+    } | overrides)
+
+
 def _clear():
     fetch.clear_cache()
     clear_scope_cache()

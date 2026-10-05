@@ -8,7 +8,7 @@ the script refuses live keys.
 
 Each scenario below is one customer, covering what we've seen in a real Substack account plus
 cases a small account may not have hit yet. Everything is created "now": Stripe can't backdate
-payments, so there are no renewals ("Renewed" events) in seeded data.
+payments, so there are no renewals ("Renewed" events) and no anniversaries in seeded data.
 
 Each run creates new customers; running it twice doubles the data.
 """
@@ -181,6 +181,24 @@ class Seeder:
         self.subscribe(self.customer("Two-Records@Example.com"), "monthly")
         self.subscribe(self.customer("two-records@example.com"), "annual")
 
+    def cancelled(self):
+        """Subscribed monthly, then canceled right away, saying it was too expensive."""
+        sub = self.subscribe(self.customer("cancelled@example.com"), "monthly")
+        self.c.v1.subscriptions.cancel(sub.id, {"cancellation_details": {"feedback": "too_expensive"}})
+
+    def cancelling(self):
+        """Annual subscriber who canceled at period end, so is still active until the year is up."""
+        sub = self.subscribe(self.customer("cancelling@example.com"), "annual")
+        self.c.v1.subscriptions.update(sub.id, {
+            "cancel_at_period_end": True, "cancellation_details": {"feedback": "unused"},
+        })
+
+    def won_back(self):
+        """Canceled monthly, then came back on annual: a returning subscriber."""
+        cus = self.customer("won-back@example.com")
+        self.c.v1.subscriptions.cancel(self.subscribe(cus, "monthly").id)
+        self.subscribe(cus, "annual")
+
     def no_invoice(self):
         """Payments made without an invoice: a success, a declined-then-canceled one, and an abandoned one."""
         cus = self.customer("no-invoice@example.com")
@@ -197,6 +215,7 @@ SCENARIOS: list[Callable[[Seeder], None]] = [
     Seeder.subscriber, Seeder.annual, Seeder.founding, Seeder.upgraded,
     Seeder.recovered, Seeder.churned, Seeder.refunded, Seeder.partially_refunded,
     Seeder.tipper, Seeder.foreign_reader, Seeder.deleted, Seeder.duplicate_email, Seeder.no_invoice,
+    Seeder.cancelled, Seeder.cancelling, Seeder.won_back,
 ]
 
 

@@ -1,6 +1,16 @@
 # Stoke
 
-Ranks the top-paying customers across one or more Stripe accounts, with a transaction history page for each customer email. It's aimed at creators who sell through platforms like Substack or Maven.
+A home base for a creator's customers across one or more Stripe accounts. It's aimed at creators who sell through platforms like Substack or Maven.
+
+## Views
+- **Overview** (`/`): a card for each list below, covering the past month.
+- **Top customers** (`/top`): customers ranked by net paid over a period.
+- **New subscribers** (`/new`): subscriptions started recently, most recent first. A subscriber is marked *Returning* if an earlier subscription of theirs had ended before this one started. Trials are included.
+- **Anniversaries** (`/anniversaries`): customers whose first successful payment had an anniversary recently, with which one it was (1 year, 2 years, …). It shows whether they're still subscribed or when they last paid.
+- **Cancellations** (`/cancellations`): canceled subscriptions, most recent cancellation first. This includes subscriptions canceled at period end, which stay active until then. It shows Stripe's reason: the customer's chosen feedback (e.g. "Too expensive"), or *Payment failed* or *Disputed* for involuntary churn. It also shows the customer's lifetime value and whether they've since resubscribed. The customer's free-text cancellation comment is never returned.
+- **Customer profile** (`/customers/:email`): the full transaction history for one email.
+
+The three event lists can be filtered to the past week, month or 3 months, and by account.
 
 ## How it reaches Stripe accounts
 A creator doesn't own the platform they sell through. What they have is their own Stripe account, connected to the platform. The app supports two kinds of access, and both can be used together:
@@ -43,6 +53,7 @@ For the API keys, use **restricted, read-only test keys** (Dashboard → Develop
 - Invoices
 - Charges
 - Customers
+- Subscriptions (New subscribers, Anniversaries and Cancellations need it. Without it, those views say which permission is missing.)
 - Balance transactions
 - Accounts (Stripe calls this `connected_account_read`). The app still works without it, but it shows "Account 1" instead of the account's name.
 
@@ -61,10 +72,11 @@ For the API keys, use **restricted, read-only test keys** (Dashboard → Develop
    - a reader paying in a foreign currency;
    - a deleted customer;
    - one email on two customer records;
-   - payments made without an invoice.
+   - payments made without an invoice;
+   - a cancellation, a cancellation at period end, and a customer who canceled and came back.
 3. To view the data, point `STRIPE_API_KEY` at the same sandbox and restart the backend.
 
-Stripe can't backdate payments, so everything is dated "now" and there are no renewals. Each run adds a new set of customers.
+Stripe can't backdate payments, so everything is dated "now" and there are no renewals or anniversaries. Each run adds a new set of customers.
 
 ### Frontend
 ```sh
@@ -85,7 +97,8 @@ The tests include `tests/test_response_shape.py`, which fails if card details, a
 
 ## Limitations
 - Data is read live, so "All time" on a large account can be slow. The upgrade path is syncing charges into a database and keeping it current with Connect webhooks.
-- The profile page filters the account's full payment history, cached for 5 minutes and shared with the "All time" leaderboard. The first load can be slow on large accounts.
+- The profile page, Anniversaries and Cancellations (for lifetime value) filter the account's full payment history. It's cached for 5 minutes and shared with the "All time" leaderboard. The first load can be slow on large accounts. Subscriptions are likewise read in full and cached.
+- A subscription's plan name comes from its latest invoice. After a plan change, that invoice holds only proration lines, so the name is taken from the price's nickname, else from Stripe's "Remaining time on …" line.
 - Charges made without a PaymentIntent (the legacy Charges API) aren't included.
 - For payments without an invoice, retries are still grouped together, but the attempt count isn't known, so the timeline doesn't say how many tries it took.
-- Stripe test mode can't backdate payments, so seeded data all falls in "Last month" and has no renewals. Period filtering and renewal grouping are covered by unit tests.
+- Stripe test mode can't backdate payments, so seeded data all falls in "Last month" and has no renewals or anniversaries. Period filtering, renewal grouping and anniversaries are covered by unit tests.

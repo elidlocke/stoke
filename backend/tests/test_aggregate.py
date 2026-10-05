@@ -4,7 +4,14 @@ from app import aggregate
 from app.aggregate import apply_reporting_currency, normalize_payment, rank_customers
 from app.currency import convert_minor
 from app.fetch import _covers
-from tests.conftest import make_charge, make_failed_pi, make_invoice, make_pi
+from tests.conftest import (
+    make_canceled_subscription,
+    make_charge,
+    make_failed_pi,
+    make_invoice,
+    make_pi,
+    make_subscription,
+)
 
 
 def norm(pi, invoice=None, account="acct_a"):
@@ -173,3 +180,121 @@ def test_cache_window_coverage():
     assert _covers(50, 100)
     assert not _covers(100, 50)
     assert not _covers(100, None)
+
+
+def ts(*args) -> int:
+    return int(datetime(*args, tzinfo=UTC).timestamp())
+
+
+def sub(account="acct_a", **overrides):
+    return aggregate.normalize_subscription(make_subscription(**overrides), account)
+
+
+def canceled(account="acct_a", **overrides):
+    return aggregate.normalize_subscription(make_canceled_subscription(**overrides), account)
+
+
+def test_window_start():
+    now = datetime(2026, 3, 31, 12, tzinfo=UTC)
+    assert aggregate.window_start("7d", now) == ts(2026, 3, 24, 12)
+    assert aggregate.window_start("1m", now) == ts(2026, 2, 28, 12)
+    assert aggregate.window_start("3m", now) == ts(2025, 12, 31, 12)
+
+
+def test_normalize_subscription():
+    s = canceled()
+    assert (s.email, s.status, s.plan, s.started) == ("ada@example.com", "canceled", "1 × Monthly (at $8.00 / month)", 1_750_000_000)
+    assert (s.canceled_at, s.ends_at, s.cancel_reason, s.cancel_feedback) == (
+        1_760_000_000, 1_760_000_000, "cancellation_requested", "too_expensive",
+    )
+    assert not s.current
+
+    # Deleted customer: the email comes from the latest invoice.
+    assert sub(customer={"id": "cus_1", "deleted": True}).email == "ada@example.com"
+    # Scheduled to cancel at period end: still active, ends at cancel_at.
+    scheduled = sub(canceled_at=1_760_000_000, cancel_at=1_762_000_000, cancel_at_period_end=True)
+    assert (scheduled.current, scheduled.ends_at) == (True, 1_762_000_000)
+
+
+def test_plan_skips_proration_lines():
+    unused = {
+        "description": "Unused time on Monthly after 30 Sep 2026", "amount": -800,
+        "parent": {"subscription_item_details": {"proration": True}},
+    }
+    remaining = {"description": "Remaining time on Annual subscription after 30 Sep 2026", "amount": 8000, "proration": True}
+    regular = {"description": "1 × Annual"}
+    assert sub(latest_invoice=make_invoice("x", lines={"data": [unused, remaining, regular]})).plan == "1 × Annual"
+
+    # A plan change's invoice: only prorations. The price's nickname wins, else the charged line's plan.
+    plan_change = make_invoice("x", lines={"data": [unused, remaining]})
+    items = {"data": [{"price": {"nickname": "Annual"}}]}
+    assert sub(latest_invoice=plan_change, items=items).plan == "Annual"
+    assert sub(latest_invoice=plan_change).plan == "Annual subscription"
+    other_wording = {**remaining, "description": "Temps restant sur Annuel"}
+    assert sub(latest_invoice=make_invoice("x", lines={"data": [unused, other_wording]})).plan == "Temps restant sur Annuel"
+    assert sub(latest_invoice=None, items=items).plan == "Annual"
+    assert sub(latest_invoice=None).plan is None
+
+
+def test_cancellations_most_recent_first_and_flag_resubscribed():
+    subs = [
+        canceled(id="sub_old", canceled_at=1_000),
+        canceled(id="sub_new", canceled_at=3_000, customer={"email": "bob@x.com"}),
+        canceled(id="sub_mid", canceled_at=2_000, customer={"email": "cy@x.com"}),
+        sub(id="sub_cy_again", customer={"email": "cy@x.com"}),  # resubscribed
+        sub(id="sub_bob_scheduled", customer={"email": "bob@x.com"}, canceled_at=3_500, cancel_at=9_000),
+        canceled(id="sub_never", status="incomplete_expired", canceled_at=2_500),  # never started
+        sub(id="sub_active"),
+    ]
+    out = aggregate.cancellations(subs, since=1_500)
+    assert [(c.sub.id, c.resubscribed) for c in out] == [
+        ("sub_bob_scheduled", False),  # still active, but canceling: doesn't count as resubscribed
+        ("sub_new", False),
+        ("sub_mid", True),
+    ]
+
+
+def test_new_subscriptions_flag_returning():
+    subs = [
+        canceled(id="sub_first", start_date=1_000, canceled_at=1_500, ended_at=1_500),
+        sub(id="sub_back", start_date=5_000),
+        sub(id="sub_trial", status="trialing", start_date=4_000, customer={"email": "bob@x.com"}),
+        sub(id="sub_failed", status="incomplete", start_date=6_000, customer={"email": "cy@x.com"}),
+        # Two subscriptions at once (e.g. two customer records): neither is returning.
+        sub(id="sub_dee_1", start_date=3_000, customer={"email": "dee@x.com"}),
+        sub(id="sub_dee_2", start_date=3_005, customer={"email": "dee@x.com"}),
+    ]
+    out = aggregate.new_subscriptions(subs, since=2_000)
+    assert [(n.sub.id, n.returning) for n in out] == [
+        ("sub_back", True), ("sub_trial", False), ("sub_dee_2", False), ("sub_dee_1", False),
+    ]
+
+
+def test_latest_anniversary():
+    first = ts(2023, 6, 15)
+    assert aggregate.latest_anniversary(first, ts(2024, 6, 14)) is None
+    assert aggregate.latest_anniversary(first, ts(2024, 6, 15)) == (1, ts(2024, 6, 15))
+    assert aggregate.latest_anniversary(first, ts(2026, 6, 1)) == (2, ts(2025, 6, 15))
+    # Leap day: the anniversary falls on 28 February in non-leap years.
+    assert aggregate.latest_anniversary(ts(2024, 2, 29), ts(2025, 3, 1)) == (1, ts(2025, 2, 28))
+    assert aggregate.latest_anniversary(ts(2024, 2, 29), ts(2028, 3, 1)) == (4, ts(2028, 2, 29))
+
+
+def test_anniversaries_in_window():
+    now = ts(2026, 10, 4)
+    payments = usd([
+        norm(make_pi(id="pi_a1", created=ts(2024, 9, 20))),  # 2nd anniversary on 20 Sep 2026
+        norm(make_pi(id="pi_a2", created=ts(2026, 1, 1))),
+        norm(make_pi(id="pi_b", created=ts(2025, 9, 30), customer={"email": "bob@x.com"})),  # 1st, 30 Sep
+        norm(make_pi(id="pi_c", created=ts(2025, 6, 1), customer={"email": "cy@x.com"})),  # anniversary not in window
+        norm(make_pi(id="pi_d", created=ts(2026, 1, 1), customer={"email": "dee@x.com"})),  # not a year yet
+    ])
+    ranks = rank_customers(payments, None)
+    subs = [sub(), canceled(customer={"email": "bob@x.com"})]
+
+    out = aggregate.anniversaries(ranks, subs, since=ts(2026, 9, 4), now=now)
+    assert [(a.customer.email, a.years, a.date, a.subscribed) for a in out] == [
+        ("bob@x.com", 1, ts(2025, 9, 30) + 365 * 86400, False),
+        ("ada@example.com", 2, ts(2026, 9, 20), True),
+    ]
+    assert out[1].customer.first_seen == ts(2024, 9, 20)

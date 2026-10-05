@@ -25,6 +25,13 @@ class NoCredentials(Exception):
     pass
 
 
+class MissingPermission(Exception):
+    """A restricted key lacks read access to a resource a view needs."""
+
+    def __init__(self, resource: str):
+        super().__init__(f"A Stripe key can't read {resource}. Grant it \"{resource}: Read\" and restart the API.")
+
+
 @dataclass(frozen=True)
 class Account:
     id: str

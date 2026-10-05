@@ -10,6 +10,15 @@ export const PERIODS: { value: Period; label: string }[] = [
   { value: 'all', label: 'All time' },
 ]
 
+// Lookback window for the event lists (cancellations, anniversaries, new subscribers).
+export type Window = '7d' | '1m' | '3m'
+
+export const WINDOWS: { value: Window; label: string }[] = [
+  { value: '7d', label: 'Past week' },
+  { value: '1m', label: 'Past month' },
+  { value: '3m', label: 'Past 3 months' },
+]
+
 export interface Account {
   id: string
   display_name: string
@@ -78,6 +87,61 @@ export interface CustomerProfile {
   timeline: TimelineEvent[] // oldest first
 }
 
+export interface CancellationEntry {
+  email: string
+  account_id: string
+  plan: string | null
+  started: number
+  canceled_at: number // when the cancellation was made
+  ends_at: number | null // when access ended, or will end
+  ended: boolean // false: canceled at period end, still active until ends_at
+  reason: string | null // cancellation_requested | payment_failed | payment_disputed
+  feedback: string | null // the customer's chosen reason, e.g. too_expensive
+  lifetime_value: number
+  resubscribed: boolean // has another current subscription
+}
+
+export interface CancellationsResponse {
+  window: Window
+  since: number
+  reporting_currency: string
+  customers: CancellationEntry[] // most recent first
+}
+
+export interface AnniversaryEntry {
+  email: string
+  years: number
+  anniversary: number
+  first_paid: number
+  last_paid: number
+  lifetime_value: number
+  payment_count: number
+  subscribed: boolean // has a current subscription
+  accounts: string[]
+}
+
+export interface AnniversariesResponse {
+  window: Window
+  since: number
+  reporting_currency: string
+  customers: AnniversaryEntry[] // most recent first
+}
+
+export interface NewSubscriberEntry {
+  email: string
+  account_id: string
+  plan: string | null
+  started: number
+  status: string // Stripe subscription status
+  returning: boolean // had an earlier subscription that ended before this one started
+}
+
+export interface NewSubscribersResponse {
+  window: Window
+  since: number
+  customers: NewSubscriberEntry[] // most recent first
+}
+
 async function get<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined) qs.set(k, v)
@@ -98,4 +162,10 @@ export const api = {
       refresh: refresh ? 'true' : undefined,
     }),
   customer: (email: string) => get<CustomerProfile>(`/api/customers/${encodeURIComponent(email)}`),
+  cancellations: (window: Window, account?: string, refresh = false) =>
+    get<CancellationsResponse>('/api/cancellations', { window, account, refresh: refresh ? 'true' : undefined }),
+  anniversaries: (window: Window, account?: string, refresh = false) =>
+    get<AnniversariesResponse>('/api/anniversaries', { window, account, refresh: refresh ? 'true' : undefined }),
+  newSubscribers: (window: Window, account?: string, refresh = false) =>
+    get<NewSubscribersResponse>('/api/new-subscribers', { window, account, refresh: refresh ? 'true' : undefined }),
 }

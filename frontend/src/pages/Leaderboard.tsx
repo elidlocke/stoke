@@ -1,40 +1,19 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { api, PERIODS } from '../api'
+import { ListToolbar } from '../components/ListToolbar'
 import { Money } from '../components/Money'
-import { PeriodPicker } from '../components/PeriodPicker'
+import { Segmented } from '../components/Segmented'
 import { formatDate } from '../format'
-import { useAccountNames } from '../useAccounts'
+import { useAccountNames, useMultipleAccounts } from '../useAccounts'
+import { useListParams, useRefreshableQuery } from '../useListView'
 
 export function Leaderboard() {
-  const [params, setParams] = useSearchParams()
-  const period = PERIODS.find((p) => p.value === params.get('period'))?.value ?? '1m'
-  const account = params.get('account') || undefined
-
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  const { value: period, account, setValue, setAccount } = useListParams('period', PERIODS, '1m')
   const accountName = useAccountNames()
-  const multipleAccounts = (accounts.data?.accounts.length ?? 0) > 1
-  const queryClient = useQueryClient()
-  const key = ['leaderboard', period, account]
-  const board = useQuery({ queryKey: key, queryFn: () => api.leaderboard(period, account) })
-
-  const update = (next: Record<string, string | undefined>) => {
-    const p = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(next)) {
-      if (v) p.set(k, v)
-      else p.delete(k)
-    }
-    setParams(p, { replace: true })
-  }
-
-  const refresh = async () => {
-    const data = await queryClient.fetchQuery({
-      queryKey: [...key, 'refresh'],
-      queryFn: () => api.leaderboard(period, account, true),
-      staleTime: 0,
-    })
-    queryClient.setQueryData(key, data)
-  }
+  const multipleAccounts = useMultipleAccounts()
+  const { query: board, refresh } = useRefreshableQuery(['leaderboard', period, account], (r) =>
+    api.leaderboard(period, account, r),
+  )
 
   return (
     <>
@@ -45,27 +24,13 @@ export function Leaderboard() {
         )}
       </header>
 
-      <div className="toolbar">
-        <PeriodPicker value={period} onChange={(p) => update({ period: p })} />
-        {accounts.data && multipleAccounts && (
-          <select
-            aria-label="Account"
-            value={account ?? ''}
-            onChange={(e) => update({ account: e.target.value || undefined })}
-          >
-            <option value="">All accounts</option>
-            {accounts.data.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_name}
-                {a.access === 'platform' ? ' (platform)' : ''}
-              </option>
-            ))}
-          </select>
-        )}
-        <button className="ghost" onClick={refresh} disabled={board.isFetching}>
-          {board.isFetching ? 'Loading…' : 'Refresh'}
-        </button>
-      </div>
+      <ListToolbar
+        picker={<Segmented options={PERIODS} value={period} onChange={setValue} label="Time period" />}
+        account={account}
+        onAccount={setAccount}
+        onRefresh={refresh}
+        fetching={board.isFetching}
+      />
 
       {board.isPending && <p className="muted">Fetching payments from Stripe…</p>}
       {board.isError && <p className="error">{board.error.message}</p>}

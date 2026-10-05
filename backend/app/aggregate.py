@@ -7,6 +7,7 @@ Money comes from the PaymentIntent's latest charge, which carries the settled am
 """
 
 import calendar
+import re
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Literal
@@ -14,6 +15,9 @@ from typing import Literal
 from app.currency import convert_minor
 
 PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12, "all": None}
+
+# Lookback windows for the event lists (cancellations, anniversaries, new subscribers).
+WINDOW_DAYS = {"7d": 7}
 
 DESCRIPTION_MAX = 200
 
@@ -66,6 +70,7 @@ class CustomerRank:
     email: str
     net_total: int = 0
     payment_count: int = 0
+    first_seen: int = 0
     last_seen: int = 0
     accounts: set[str] = field(default_factory=set)
 
@@ -81,6 +86,16 @@ def period_start(period: str, now: datetime | None = None) -> int | None:
     # Clamp e.g. 31 March - 1 month to the last day of February.
     day = min(now.day, calendar.monthrange(year, month)[1])
     return int(now.replace(year=year, month=month, day=day).timestamp())
+
+
+def window_start(window: str, now: datetime | None = None) -> int:
+    """Unix timestamp for the start of a lookback window: "7d", or a calendar-month period."""
+    now = now or datetime.now(UTC)
+    if window in WINDOW_DAYS:
+        return int(now.timestamp()) - WINDOW_DAYS[window] * 86400
+    start = period_start(window, now)
+    assert start is not None
+    return start
 
 
 def _first(*candidates: str | None) -> str | None:
@@ -117,16 +132,18 @@ def _status(pi: dict) -> Status | None:
     return "canceled" if s == "canceled" else "failed"
 
 
+def _truncate(text: str | None) -> str | None:
+    if text and len(text) > DESCRIPTION_MAX:
+        text = text[: DESCRIPTION_MAX - 1] + "…"
+    return text
+
+
 def _description(pi: dict, invoice: dict | None) -> str | None:
     items = ((invoice or {}).get("lines") or {}).get("data", [])
     lines = [d for d in (item.get("description") for item in items) if d]
     if lines:
-        text = lines[0] + (f" + {len(lines) - 1} more" if len(lines) > 1 else "")
-    else:
-        text = pi.get("description")
-    if text and len(text) > DESCRIPTION_MAX:
-        text = text[: DESCRIPTION_MAX - 1] + "…"
-    return text
+        return _truncate(lines[0] + (f" + {len(lines) - 1} more" if len(lines) > 1 else ""))
+    return _truncate(pi.get("description"))
 
 
 def _settlement(charge: dict) -> tuple[str | None, int | None, int | None]:
@@ -230,6 +247,7 @@ def rank_customers(payments: list[Payment], since: int | None) -> list[CustomerR
         rank = by_email.setdefault(p.email, CustomerRank(email=p.email))
         rank.net_total += p.net_reporting
         rank.payment_count += 1
+        rank.first_seen = min(rank.first_seen or p.created, p.created)
         rank.last_seen = max(rank.last_seen, p.created)
         rank.accounts.add(p.account_id)
     return sorted(by_email.values(), key=lambda r: (-r.net_total, r.email))
@@ -307,3 +325,162 @@ def timeline(payments: list[Payment]) -> list[TimelineEvent]:
                 attempts=0, failure_message=None, **base,
             ))
     return sorted(events, key=lambda e: e.date)
+
+
+# ---- Subscriptions: cancellations, new subscribers, anniversaries ----
+
+# Statuses where the customer is still subscribed (past_due: Stripe is still retrying the payment).
+CURRENT_STATUSES = {"active", "trialing", "past_due"}
+# The first payment never went through, so the subscription never really started.
+NEVER_STARTED = {"incomplete", "incomplete_expired"}
+
+
+@dataclass(frozen=True)
+class Subscription:
+    id: str
+    account_id: str
+    email: str | None
+    status: str
+    plan: str | None
+    started: int
+    canceled_at: int | None  # when the cancellation was made (it may take effect later)
+    ends_at: int | None  # when it ended, or is scheduled to end
+    cancel_reason: str | None  # cancellation_requested, payment_failed or payment_disputed
+    cancel_feedback: str | None  # the customer's chosen reason, e.g. too_expensive
+
+    @property
+    def current(self) -> bool:
+        return self.status in CURRENT_STATUSES
+
+
+def _is_proration(line: dict) -> bool:
+    # Older API versions flag the line itself; newer ones nest it under the line's parent.
+    details = (line.get("parent") or {}).get("subscription_item_details") or {}
+    return bool(line.get("proration") or details.get("proration"))
+
+
+# Stripe's wording for the charged line of a plan change, e.g. "Remaining time on Annual after 30 Sep 2026".
+_REMAINING_TIME = re.compile(r"^Remaining time on (?:\d+ × )?(.+?) after .+$")
+
+
+def _plan(sub: dict, invoice: dict) -> str | None:
+    """The latest invoice's plan line. A plan change's invoice holds only proration lines
+    ("Unused time on Monthly …", "Remaining time on Annual …"), so then the price's nickname
+    is used, else the charged proration line, which names the new plan."""
+    lines = [line for line in (invoice.get("lines") or {}).get("data", []) if line.get("description")]
+    if regular := [line for line in lines if not _is_proration(line)]:
+        return _truncate(regular[0]["description"])
+    items = (sub.get("items") or {}).get("data", [])
+    if nickname := (items[0].get("price") or {}).get("nickname") if items else None:
+        return _truncate(nickname)
+    if not lines:
+        return None
+    text = ([line for line in lines if (line.get("amount") or 0) > 0] or lines)[-1]["description"]
+    m = _REMAINING_TIME.match(text)
+    return _truncate(m.group(1) if m else text)
+
+
+def normalize_subscription(sub: dict, account_id: str) -> Subscription:
+    customer = sub.get("customer")
+    invoice = sub.get("latest_invoice") if isinstance(sub.get("latest_invoice"), dict) else {}
+    details = sub.get("cancellation_details") or {}
+    return Subscription(
+        id=sub["id"],
+        account_id=account_id,
+        # The invoice's copy of the email survives the customer being deleted.
+        email=_first(customer.get("email") if isinstance(customer, dict) else None, invoice.get("customer_email")),
+        status=sub["status"],
+        plan=_plan(sub, invoice),
+        started=sub.get("start_date") or sub["created"],
+        canceled_at=sub.get("canceled_at"),
+        ends_at=sub.get("ended_at") or sub.get("cancel_at"),
+        cancel_reason=details.get("reason"),
+        cancel_feedback=details.get("feedback"),
+    )
+
+
+def _by_email(subs: list[Subscription]) -> dict[str, list[Subscription]]:
+    out: dict[str, list[Subscription]] = {}
+    for s in subs:
+        if s.email is not None:
+            out.setdefault(s.email, []).append(s)
+    return out
+
+
+@dataclass(frozen=True)
+class Cancellation:
+    sub: Subscription
+    resubscribed: bool  # has another subscription that's current and not itself canceling
+
+
+def cancellations(subs: list[Subscription], since: int) -> list[Cancellation]:
+    """Subscriptions canceled at or after `since`, most recent first. Includes cancellations
+    scheduled for the end of the billing period, which are still active until `ends_at`."""
+    by_email = _by_email(subs)
+    out = [
+        Cancellation(
+            sub=s,
+            resubscribed=any(o.id != s.id and o.current and o.canceled_at is None for o in by_email[s.email]),
+        )
+        for s in subs
+        if s.email is not None and s.canceled_at is not None and s.canceled_at >= since
+        and s.status not in NEVER_STARTED
+    ]
+    return sorted(out, key=lambda c: (-(c.sub.canceled_at or 0), c.sub.email))
+
+
+@dataclass(frozen=True)
+class NewSubscription:
+    sub: Subscription
+    returning: bool  # had an earlier subscription that ended before this one started
+
+
+def new_subscriptions(subs: list[Subscription], since: int) -> list[NewSubscription]:
+    """Subscriptions started at or after `since`, most recent first."""
+    by_email = _by_email(subs)
+    out = [
+        NewSubscription(
+            sub=s,
+            returning=any(o.id != s.id and o.ends_at is not None and o.ends_at <= s.started for o in by_email[s.email]),
+        )
+        for s in subs
+        if s.email is not None and s.started >= since and s.status not in NEVER_STARTED
+    ]
+    return sorted(out, key=lambda n: (-n.sub.started, n.sub.email))
+
+
+def _add_years(d: datetime, years: int) -> datetime:
+    # A 29 February start has its anniversary on 28 February in non-leap years.
+    day = min(d.day, calendar.monthrange(d.year + years, d.month)[1])
+    return d.replace(year=d.year + years, day=day)
+
+
+def latest_anniversary(first: int, now: int) -> tuple[int, int] | None:
+    """(years, date) of the most recent anniversary of `first` on or before `now`; None before the first."""
+    start, current = datetime.fromtimestamp(first, UTC), datetime.fromtimestamp(now, UTC)
+    years = current.year - start.year
+    if _add_years(start, years) > current:
+        years -= 1
+    if years < 1:
+        return None
+    return years, int(_add_years(start, years).timestamp())
+
+
+@dataclass(frozen=True)
+class Anniversary:
+    customer: CustomerRank
+    years: int
+    date: int
+    subscribed: bool  # has a current subscription
+
+
+def anniversaries(
+    ranks: list[CustomerRank], subs: list[Subscription], since: int, now: int
+) -> list[Anniversary]:
+    """Customers whose first successful payment had an anniversary at or after `since`, most recent first."""
+    subscribed = {s.email for s in subs if s.current}
+    out = []
+    for r in ranks:
+        if (a := latest_anniversary(r.first_seen, now)) and a[1] >= since:
+            out.append(Anniversary(customer=r, years=a[0], date=a[1], subscribed=r.email in subscribed))
+    return sorted(out, key=lambda a: (-a.date, a.customer.email))
