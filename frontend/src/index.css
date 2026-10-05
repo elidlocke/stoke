@@ -1,0 +1,365 @@
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --text: #17171c;
+  --muted: #6b6b76;
+  --border: #e4e4e9;
+  --accent: #5b4cdb;
+  --accent-soft: #eeebfc;
+  --ok: #17803d;
+  --ok-soft: #e3f5e9;
+  --bad: #b42318;
+  --bad-soft: #fdecea;
+  --warn: #9a6200;
+  --warn-soft: #fff6e0;
+  --neutral-soft: #efeff3;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111114;
+    --surface: #1a1a1f;
+    --text: #ececf1;
+    --muted: #9a9aa6;
+    --border: #2c2c34;
+    --accent: #a89cff;
+    --accent-soft: #2a2550;
+    --ok: #5fd28a;
+    --ok-soft: #173424;
+    --bad: #ff8a80;
+    --bad-soft: #3d1c1a;
+    --warn: #f0c060;
+    --warn-soft: #3a3018;
+    --neutral-soft: #26262d;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1 {
+  font-size: 24px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin-bottom: 20px;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.muted {
+  color: var(--muted);
+}
+.error {
+  color: var(--bad);
+}
+.warning {
+  background: var(--warn-soft);
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  background: var(--neutral-soft);
+  border-radius: 10px;
+  padding: 3px;
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.segmented button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+select,
+button.ghost {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+button.ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+th {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.right {
+  text-align: right;
+}
+.rank {
+  width: 3em;
+  color: var(--muted);
+}
+
+/* ---- Customer profile ---- */
+
+h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.summary {
+  margin-bottom: 32px;
+}
+.lede {
+  font-size: 17px;
+  margin: 0 0 16px;
+  max-width: 60ch;
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+}
+.stat-value {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.stat.bad .stat-value {
+  color: var(--bad);
+}
+
+.timeline-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.timeline-month h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 24px 0 8px;
+}
+.timeline-month ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.event {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+/* The connecting line between markers. */
+.event::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 30px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.timeline-month:last-child .event:last-child::before {
+  display: none;
+}
+
+.marker {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  background: var(--neutral-soft);
+  color: var(--muted);
+}
+.marker.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.marker.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.marker.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.event-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 3px;
+}
+.event-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.event-title {
+  font-weight: 600;
+}
+.amount {
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+.amount.unpaid {
+  color: var(--muted);
+  font-weight: 400;
+  text-decoration: line-through;
+}
+.amount.warn {
+  color: var(--warn);
+}
+/* Shown inline before the original amount, so it doesn't add a line and push the description down. */
+.converted {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-right: 6px;
+}
+.event-desc {
+  overflow-wrap: anywhere;
+}
+.event-note {
+  font-size: 14px;
+  margin-top: 2px;
+}
+.event-note.bad {
+  color: var(--bad);
+}
+.event-note.warn {
+  color: var(--warn);
+}
+.event-note.neutral {
+  color: var(--muted);
+}
+.event-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+}
+button.link:hover {
+  text-decoration: underline;
+}
+
+.renewals {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 14px;
+  max-width: 320px;
+}
+.renewals li {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--border);
+}

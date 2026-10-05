@@ -1,0 +1,25 @@
+[project]
+name = "stoke-backend"
+version = "0.1.0"
+description = "Top customers across Stripe Connect accounts"
+requires-python = ">=3.13"
+dependencies = [
+    "cachetools>=7.2.0",
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.15.0",
+    "pydantic[email]>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "stripe>=15.6.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "respx>=0.23.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
