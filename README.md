@@ -8,7 +8,7 @@ A home base for a creator's customers across one or more Stripe accounts. It's a
 - **New subscribers** (`/new`): subscriptions started recently, most recent first. A subscriber is marked *Returning* if an earlier subscription of theirs had ended before this one started. Trials are included.
 - **Anniversaries** (`/anniversaries`): customers whose first successful payment had an anniversary recently, with which one it was (1 year, 2 years, …). It shows whether they're still subscribed or when they last paid.
 - **Cancellations** (`/cancellations`): canceled subscriptions, most recent cancellation first. This includes subscriptions canceled at period end, which stay active until then. It shows Stripe's reason: the customer's chosen feedback (e.g. "Too expensive"), or *Payment failed* or *Disputed* for involuntary churn. It also shows the customer's lifetime value and whether they've since resubscribed. The customer's free-text cancellation comment is never returned.
-- **Customer profile** (`/customers/:email`): the full transaction history for one email.
+- **Customer profile** (`/customers/:id`): the full transaction history for one email. The id is opaque (see Security notes), so URLs never contain the email.
 
 The three event lists can be filtered to the past week, month or 3 months, and by account.
 
@@ -93,6 +93,7 @@ The tests include `tests/test_response_shape.py`, which fails if card details, a
 
 ## Security notes
 - **There is no authentication.** Anyone who can reach the backend can see every customer's email and payment history. The backend is bound to `127.0.0.1` for that reason. Add auth before deploying.
+- **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, generated on first run and kept in `.customer_id_secret` at the repo root (gitignored), or `CUSTOMER_ID_SECRET` if set. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing a future Stripe App. Back it up with `.env`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
 - Responses are built only from the Pydantic models in `backend/app/models.py`, and raw Stripe objects are never returned. Stripe errors are logged on the server and returned as a generic 502.
 
 ## Limitations

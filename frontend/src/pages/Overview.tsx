@@ -6,6 +6,7 @@ import { Chip } from '../components/Chip'
 import { Money } from '../components/Money'
 import { formatRelative, formatYears } from '../format'
 import { cancelReason, subscriptionStatus } from '../labels'
+import { customerPath } from '../routes'
 
 // The home page summarizes the past month. Query keys match the list pages' defaults,
 // so opening a list after the overview is instant.
@@ -43,7 +44,7 @@ function TopCustomersCard() {
       empty="No paying customers this month."
     >
       {q.data?.customers.slice(0, PREVIEW).map((c) => (
-        <Row key={c.email} email={c.email}>
+        <Row key={c.email} customer={c}>
           <Money amount={c.net_total} currency={q.data.reporting_currency} />
         </Row>
       ))}
@@ -65,7 +66,7 @@ function NewSubscribersCard() {
       {q.data?.customers.slice(0, PREVIEW).map((c, i) => {
         const status = subscriptionStatus(c.status)
         return (
-          <Row key={`${c.email}-${i}`} email={c.email}>
+          <Row key={`${c.customer_id}-${i}`} customer={c}>
             {c.status !== 'active' && <Chip tone={status.tone}>{status.label}</Chip>}
             <span className="muted">{formatRelative(c.started)}</span>
           </Row>
@@ -87,7 +88,7 @@ function AnniversariesCard() {
       empty="No anniversaries this month."
     >
       {q.data?.customers.slice(0, PREVIEW).map((c) => (
-        <Row key={c.email} email={c.email}>
+        <Row key={c.email} customer={c}>
           <Chip tone="accent">{formatYears(c.years)}</Chip>
           <span className="muted">{formatRelative(c.anniversary)}</span>
         </Row>
@@ -110,7 +111,7 @@ function CancellationsCard() {
       {q.data?.customers.slice(0, PREVIEW).map((c, i) => {
         const reason = cancelReason(c.reason, c.feedback)
         return (
-          <Row key={`${c.email}-${i}`} email={c.email}>
+          <Row key={`${c.customer_id}-${i}`} customer={c}>
             <Chip tone={reason.tone}>{reason.label}</Chip>
             <span className="muted">{formatRelative(c.canceled_at)}</span>
           </Row>
@@ -164,11 +165,11 @@ function Card({
   )
 }
 
-function Row({ email, children }: { email: string; children: ReactNode }) {
+function Row({ customer, children }: { customer: { email: string; customer_id: string }; children: ReactNode }) {
   return (
     <li>
-      <Link to={`/customers/${encodeURIComponent(email)}`} className="card-email">
-        {email}
+      <Link to={customerPath(customer.customer_id)} className="card-email">
+        {customer.email}
       </Link>
       <span className="card-detail">{children}</span>
     </li>

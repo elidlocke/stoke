@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import fetch, fx, service
 from app.aggregate import normalize_payment, normalize_subscription
+from app.customer_id import customer_id
 from app.main import app
 from app.stripe_client import Account, AccountScope
 from tests.conftest import (
@@ -82,13 +83,14 @@ def test_leaderboard_shape(client):
     [entry] = body["customers"]
     # $50 on the platform + £40 (5000 minor * 1.25 -> 6250) on the connected account; failures ignored.
     assert entry == {
-        "rank": 1, "email": "ada@example.com", "net_total": 11250, "payment_count": 2,
+        "rank": 1, "email": "ada@example.com", "customer_id": customer_id("ada@example.com"),
+        "net_total": 11250, "payment_count": 2,
         "last_seen": 1_750_000_000, "accounts": ["acct_conn", "acct_platform"],
     }
 
 
 def test_profile_shape(client):
-    resp = client.get("/api/customers/ADA@example.com")
+    resp = client.get(f"/api/customers/{customer_id('ada@example.com')}")
     assert resp.status_code == 200
     assert_clean(resp.text)
     body = resp.json()
@@ -142,9 +144,27 @@ def test_invalid_window_rejected(client):
     assert client.get("/api/cancellations", params={"window": "all"}).status_code == 422
 
 
-def test_invalid_email_rejected(client):
-    assert client.get("/api/customers/not-an-email").status_code == 422
+def test_every_list_links_by_opaque_id(client):
+    for path in ["/api/leaderboard", "/api/cancellations", "/api/anniversaries", "/api/new-subscribers"]:
+        for c in client.get(path, params={"window": "3m"} if "leader" not in path else {}).json()["customers"]:
+            assert c["customer_id"] == customer_id(c["email"])
+
+
+def test_profile_of_subscriber_without_payments(client, monkeypatch):
+    async def no_payments(account, since, refresh=False):
+        return []
+
+    monkeypatch.setattr(fetch, "payments_since", no_payments)
+    resp = client.get(f"/api/customers/{customer_id('ada@example.com')}")
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "ada@example.com"
+
+
+def test_profile_rejects_emails_and_unknown_ids(client):
+    assert client.get("/api/customers/ada@example.com").status_code == 422  # emails are no longer accepted
+    assert client.get("/api/customers/cus_1").status_code == 422
     assert client.get("/api/customers/x' OR email:'y").status_code == 422
+    assert client.get(f"/api/customers/{'0' * 24}").status_code == 404
 
 
 def test_unknown_account_404(client):

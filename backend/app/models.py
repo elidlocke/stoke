@@ -33,6 +33,7 @@ class AccountsResponse(_Out):
 class LeaderboardEntry(_Out):
     rank: int
     email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
     net_total: int  # minor units of reporting_currency
     payment_count: int
     last_seen: int  # unix seconds
@@ -81,6 +82,7 @@ class CustomerSummary(_Out):
 
 class CustomerProfileResponse(_Out):
     email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
     reporting_currency: str
     summary: CustomerSummary
     timeline: list[TimelineEventOut]  # oldest first
@@ -88,6 +90,7 @@ class CustomerProfileResponse(_Out):
 
 class CancellationEntry(_Out):
     email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
     account_id: str
     plan: str | None
     started: int  # unix seconds
@@ -111,6 +114,7 @@ class CancellationsResponse(_Out):
 
 class AnniversaryEntry(_Out):
     email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
     years: int  # 1 for the first anniversary, 2 for the second, ...
     anniversary: int  # unix seconds
     first_paid: int
@@ -130,6 +134,7 @@ class AnniversariesResponse(_Out):
 
 class NewSubscriberEntry(_Out):
     email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
     account_id: str
     plan: str | None
     started: int  # unix seconds

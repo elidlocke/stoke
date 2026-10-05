@@ -61,15 +61,15 @@ function groupByMonth(items: Item[]): { month: string; items: Item[] }[] {
 }
 
 export function CustomerProfile() {
-  const email = useParams().email ?? ''
+  const customerId = useParams().customerId ?? ''
   const [order, setOrder] = useState<'oldest' | 'newest'>('oldest')
-  const profile = useQuery({ queryKey: ['customer', email], queryFn: () => api.customer(email) })
+  const profile = useQuery({ queryKey: ['customer', customerId], queryFn: () => api.customer(customerId) })
 
   return (
     <>
       <BackLink />
       <header className="page-header">
-        <h1>{email}</h1>
+        <h1>{profile.data?.email ?? 'Customer'}</h1>
       </header>
 
       {profile.isPending && <p className="muted">Reading this customer's history from Stripe…</p>}
@@ -80,7 +80,7 @@ export function CustomerProfile() {
           <Summary profile={profile.data} />
 
           {profile.data.timeline.length === 0 ? (
-            <p className="muted">No payments found for this email.</p>
+            <p className="muted">No payments yet.</p>
           ) : (
             <>
               <div className="timeline-header">

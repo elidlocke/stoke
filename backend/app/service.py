@@ -21,10 +21,15 @@ from app.models import (
     TimelineEventOut,
     Window,
 )
-from app.stripe_client import Account, AccountScope, get_scope
+from app.customer_id import customer_id, resolve
+from app.stripe_client import Account, AccountScope, MissingPermission, get_scope
 
 
 class UnknownAccount(Exception):
+    pass
+
+
+class UnknownCustomer(Exception):
     pass
 
 
@@ -88,6 +93,7 @@ async def leaderboard(
             LeaderboardEntry(
                 rank=i,
                 email=r.email,
+                customer_id=customer_id(r.email),
                 net_total=r.net_total,
                 payment_count=r.payment_count,
                 last_seen=r.last_seen,
@@ -98,17 +104,33 @@ async def leaderboard(
     )
 
 
-async def customer_profile(email: str) -> CustomerProfileResponse:
+async def _subscriptions_if_permitted(accts: list[Account]) -> list[Subscription]:
+    try:
+        return await _subscriptions(accts, refresh=False)
+    except MissingPermission:
+        return []
+
+
+async def customer_profile(cid: str) -> CustomerProfileResponse:
     scope = await get_scope()
     # Filter the full payment history rather than using Stripe Search: search can't query billing
     # or receipt emails, and filtering matches the leaderboard's email attribution exactly.
     # The history is cached, so this is shared with the "all time" leaderboard.
-    per_account = await asyncio.gather(*(fetch.payments_since(a, None) for a in scope.accounts))
-    payments = aggregate.customer_payments([p for ps in per_account for p in ps], email)
+    per_account, subs = await asyncio.gather(
+        asyncio.gather(*(fetch.payments_since(a, None) for a in scope.accounts)),
+        # Subscribers who haven't paid yet (e.g. on a trial) are linked from the lists too.
+        _subscriptions_if_permitted(scope.accounts),
+    )
+    all_payments = [p for ps in per_account for p in ps]
+    email = resolve(cid, [p.email for p in all_payments] + [s.email for s in subs])
+    if email is None:
+        raise UnknownCustomer(cid)
+    payments = aggregate.customer_payments(all_payments, email)
     payments = await _to_reporting(payments, scope.reporting_currency)
 
     return CustomerProfileResponse(
         email=email,
+        customer_id=cid,
         reporting_currency=scope.reporting_currency,
         summary=CustomerSummary(**aggregate.customer_summary(payments)),
         timeline=[TimelineEventOut(**asdict(e)) for e in aggregate.timeline(payments)],
@@ -133,6 +155,7 @@ async def cancellations(window: Window, account_id: str | None, refresh: bool) -
         customers=[
             CancellationEntry(
                 email=c.sub.email,
+                customer_id=customer_id(c.sub.email),
                 account_id=c.sub.account_id,
                 plan=c.sub.plan,
                 started=c.sub.started,
@@ -166,6 +189,7 @@ async def anniversaries(window: Window, account_id: str | None, refresh: bool) -
         customers=[
             AnniversaryEntry(
                 email=a.customer.email,
+                customer_id=customer_id(a.customer.email),
                 years=a.years,
                 anniversary=a.date,
                 first_paid=a.customer.first_seen,
@@ -192,6 +216,7 @@ async def new_subscribers(window: Window, account_id: str | None, refresh: bool)
         customers=[
             NewSubscriberEntry(
                 email=n.sub.email,
+                customer_id=customer_id(n.sub.email),
                 account_id=n.sub.account_id,
                 plan=n.sub.plan,
                 started=n.sub.started,

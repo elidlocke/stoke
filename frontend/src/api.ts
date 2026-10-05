@@ -35,6 +35,7 @@ export interface AccountsResponse {
 export interface LeaderboardEntry {
   rank: number
   email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
   net_total: number
   payment_count: number
   last_seen: number
@@ -73,6 +74,7 @@ export interface TimelineEvent {
 
 export interface CustomerProfile {
   email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
   reporting_currency: string
   summary: {
     net: number
@@ -89,6 +91,7 @@ export interface CustomerProfile {
 
 export interface CancellationEntry {
   email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
   account_id: string
   plan: string | null
   started: number
@@ -110,6 +113,7 @@ export interface CancellationsResponse {
 
 export interface AnniversaryEntry {
   email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
   years: number
   anniversary: number
   first_paid: number
@@ -129,6 +133,7 @@ export interface AnniversariesResponse {
 
 export interface NewSubscriberEntry {
   email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
   account_id: string
   plan: string | null
   started: number
@@ -161,7 +166,7 @@ export const api = {
       account,
       refresh: refresh ? 'true' : undefined,
     }),
-  customer: (email: string) => get<CustomerProfile>(`/api/customers/${encodeURIComponent(email)}`),
+  customer: (customerId: string) => get<CustomerProfile>(`/api/customers/${encodeURIComponent(customerId)}`),
   cancellations: (window: Window, account?: string, refresh = false) =>
     get<CancellationsResponse>('/api/cancellations', { window, account, refresh: refresh ? 'true' : undefined }),
   anniversaries: (window: Window, account?: string, refresh = false) =>

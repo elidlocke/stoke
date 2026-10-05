@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Currency everything is converted to. Default: the platform's payout currency, else the first account's.
     reporting_currency: str | None = None
 
+    # Key for the opaque customer ids in URLs. Empty: a random key is generated on first run and
+    # kept in customer_id_secret_file, so ids survive API key rotation and accounts coming and going.
+    customer_id_secret: SecretStr | None = None
+    customer_id_secret_file: Path = ENV_FILE.parent / ".customer_id_secret"
+
     cors_origin: str = "http://localhost:5173"
     cache_ttl_seconds: int = 300
 

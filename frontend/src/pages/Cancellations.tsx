@@ -7,6 +7,7 @@ import { Segmented } from '../components/Segmented'
 import { formatDate, formatRelative } from '../format'
 import { cancelReason } from '../labels'
 import { useAccountNames, useMultipleAccounts } from '../useAccounts'
+import { customerPath } from '../routes'
 import { useListParams, useRefreshableQuery } from '../useListView'
 
 export function Cancellations() {
@@ -58,7 +59,7 @@ export function Cancellations() {
                   return (
                     <tr key={`${c.email}-${c.canceled_at}-${i}`}>
                       <td>
-                        <Link to={`/customers/${encodeURIComponent(c.email)}`}>{c.email}</Link>
+                        <Link to={customerPath(c.customer_id)}>{c.email}</Link>
                         {c.resubscribed && (
                           <>
                             {' '}

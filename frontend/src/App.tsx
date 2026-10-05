@@ -26,7 +26,7 @@ export default function App() {
             <Route path="/new" element={<NewSubscribers />} />
             <Route path="/anniversaries" element={<Anniversaries />} />
             <Route path="/cancellations" element={<Cancellations />} />
-            <Route path="/customers/:email" element={<CustomerProfile />} />
+            <Route path="/customers/:customerId" element={<CustomerProfile />} />
           </Route>
         </Routes>
       </BrowserRouter>

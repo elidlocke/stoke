@@ -1,7 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import EmailStr, TypeAdapter, ValidationError
+from fastapi import APIRouter, HTTPException, Path, Query
 
 from app import service
 from app.models import (
@@ -16,9 +15,6 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/api")
-
-_email = TypeAdapter(EmailStr)
-
 
 @router.get("/accounts")
 async def get_accounts() -> AccountsResponse:
@@ -56,11 +52,11 @@ async def get_new_subscribers(
     return await service.new_subscribers(window, account, refresh)
 
 
-@router.get("/customers/{email}")
-async def get_customer(email: str) -> CustomerProfileResponse:
-    email = email.strip().lower()
+@router.get("/customers/{customer_id}")
+async def get_customer(
+    customer_id: Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")],
+) -> CustomerProfileResponse:
     try:
-        _email.validate_python(email)
-    except ValidationError:
-        raise HTTPException(422, "Invalid email address")
-    return await service.customer_profile(email)
+        return await service.customer_profile(customer_id)
+    except service.UnknownCustomer:
+        raise HTTPException(404, "Customer not found")

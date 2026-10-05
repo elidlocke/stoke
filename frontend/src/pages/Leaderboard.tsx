@@ -5,6 +5,7 @@ import { Money } from '../components/Money'
 import { Segmented } from '../components/Segmented'
 import { formatDate } from '../format'
 import { useAccountNames, useMultipleAccounts } from '../useAccounts'
+import { customerPath } from '../routes'
 import { useListParams, useRefreshableQuery } from '../useListView'
 
 export function Leaderboard() {
@@ -63,7 +64,7 @@ export function Leaderboard() {
                     <tr key={c.email}>
                       <td className="rank num">{c.rank}</td>
                       <td>
-                        <Link to={`/customers/${encodeURIComponent(c.email)}`}>{c.email}</Link>
+                        <Link to={customerPath(c.customer_id)}>{c.email}</Link>
                       </td>
                       <td className="right">
                         <Money amount={c.net_total} currency={board.data.reporting_currency} />

@@ -6,6 +6,7 @@ import { Money } from '../components/Money'
 import { Segmented } from '../components/Segmented'
 import { formatDate, formatRelative, formatYears } from '../format'
 import { useAccountNames, useMultipleAccounts } from '../useAccounts'
+import { customerPath } from '../routes'
 import { useListParams, useRefreshableQuery } from '../useListView'
 
 export function Anniversaries() {
@@ -56,7 +57,7 @@ export function Anniversaries() {
                 {query.data.customers.map((c) => (
                   <tr key={c.email}>
                     <td>
-                      <Link to={`/customers/${encodeURIComponent(c.email)}`}>{c.email}</Link>
+                      <Link to={customerPath(c.customer_id)}>{c.email}</Link>
                     </td>
                     <td>
                       <Chip tone="accent">{formatYears(c.years)}</Chip>

@@ -1,11 +1,14 @@
 import copy
 import os
+import tempfile
 
 import dotenv
 
 # Keep the developer's real .env (and its keys) out of tests.
 dotenv.load_dotenv = lambda *args, **kwargs: False
 os.environ.setdefault("STRIPE_API_KEY", "rk_test_dummy")
+# Generate the customer id key in a temp dir, not next to the developer's .env.
+os.environ["CUSTOMER_ID_SECRET_FILE"] = os.path.join(tempfile.mkdtemp(), ".customer_id_secret")
 
 import pytest  # noqa: E402
 
