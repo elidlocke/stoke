@@ -13,6 +13,12 @@
   --warn: #9a6200;
   --warn-soft: #fff6e0;
   --neutral-soft: #efeff3;
+  /* Chart series, in fixed order; validated for color vision deficiency against --surface. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #4a3aa7;
+  --grid: #ececf0;
+  --axis: #d0d0d8;
   color-scheme: light;
 }
 
@@ -32,6 +38,11 @@
     --warn: #f0c060;
     --warn-soft: #3a3018;
     --neutral-soft: #26262d;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #9085e9;
+    --grid: #26262d;
+    --axis: #3a3a44;
     color-scheme: dark;
   }
 }
@@ -175,6 +186,87 @@ main {
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+/* ---- Trend charts ---- */
+
+.trends {
+  margin-bottom: 16px;
+}
+.chart {
+  margin: 0 -8px 0 -12px;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.chart-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.line-key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+.line-key.dashed {
+  background: repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px);
+}
+.chart-end-label {
+  fill: var(--text);
+  font-size: 12px;
+}
+.chart-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+}
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chart-note {
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.chart-table {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.chart-table summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.chart-table th,
+.chart-table td {
+  padding: 6px 10px;
+}
+.delta {
+  font-size: 14px;
+  font-weight: 600;
+}
+.delta.up {
+  color: var(--ok);
+}
+.delta.down {
+  color: var(--bad);
+}
+.delta.flat {
+  color: var(--muted);
+}
+.delta .muted {
+  font-weight: 400;
 }
 
 /* ---- Chips ---- */
@@ -470,6 +562,12 @@ h2 {
 .amount.warn {
   color: var(--warn);
 }
+.amount.bad {
+  color: var(--bad);
+}
+.amount.ok {
+  color: var(--ok);
+}
 /* Shown inline before the original amount, so it doesn't add a line and push the description down. */
 .converted {
   font-size: 12px;
@@ -523,4 +621,203 @@ button.link:hover {
   justify-content: space-between;
   padding: 2px 0;
   border-bottom: 1px dashed var(--border);
+}
+
+/* Where a payment went: customer paid, fees, what the creator keeps. */
+.breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 0;
+  max-width: 340px;
+  margin: 6px 0 2px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--neutral-soft);
+  border-radius: 8px;
+}
+.breakdown dt,
+.breakdown dd {
+  margin: 0;
+}
+.breakdown dd {
+  padding-left: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.breakdown dt:not(.total) {
+  color: var(--muted);
+}
+.breakdown .fee {
+  color: var(--muted);
+}
+.breakdown .total {
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+  padding-top: 3px;
+  margin-top: 2px;
+}
+.breakdown .total.negative {
+  color: var(--bad);
+}
+
+/* Cancellations: the customer's subscription now, under the canceled one's end date. */
+.access-now {
+  margin-top: 4px;
+}
+
+.section-title {
+  margin: 28px 0 12px;
+}
+
+/* ---- Sign-in and account menu ---- */
+
+.signin {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 0 16px;
+  text-align: center;
+}
+.signin .brand {
+  justify-content: center;
+  font-size: 26px;
+}
+.app-header-user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .app-header-user {
+    margin-left: 0;
+    padding-bottom: 10px;
+  }
+}
+
+/* ---- Forms ---- */
+
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+label .muted {
+  font-weight: 400;
+}
+button.primary,
+button.danger {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: var(--accent);
+}
+button.danger {
+  background: var(--bad);
+}
+button.primary:disabled,
+button.danger:disabled,
+button.link:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+button.link.danger {
+  background: none;
+  color: var(--bad);
+  padding: 0;
+  font-weight: 400;
+}
+@media (prefers-color-scheme: dark) {
+  button.primary,
+  button.danger {
+    color: #111114;
+  }
+}
+
+/* ---- Settings ---- */
+
+.settings-section {
+  margin-bottom: 36px;
+}
+.settings-section > h2 {
+  margin-bottom: 4px;
+}
+.lede-small {
+  margin: 0 0 16px;
+  max-width: 70ch;
+}
+.small {
+  font-size: 13px;
+}
+code {
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+td.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+.edit-row td {
+  background: var(--bg);
+}
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  white-space: normal;
+}
+.inline-form label {
+  flex: 1 1 260px;
+}
+.inline-form .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.add-key {
+  margin-top: 16px;
+  max-width: 720px;
+}
+.add-key h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.steps {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.steps li + li {
+  margin-top: 4px;
+}
+.add-key .fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.add-key .fields label {
+  flex: 1 1 220px;
 }

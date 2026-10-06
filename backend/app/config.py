@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, SecretStr
@@ -12,20 +13,30 @@ load_dotenv(ENV_FILE)
 
 
 class Settings(BaseSettings):
-    # Platform mode: a Connect platform's key; connected accounts are read via the Stripe-Account header.
-    # STRIPE_API_KEY is accepted as the older name.
+    # Creators' own keys are stored per user in Postgres (see app/credentials.py), not here.
+    database_url: str = "postgresql+asyncpg://stoke:stoke@127.0.0.1:5432/stoke"
+
+    # Encryption of stored Stripe keys (see app/crypto.py). "local": a 32-byte key from
+    # STOKE_ENCRYPTION_KEY (base64) or, if unset, generated on first run into encryption_key_file.
+    # "aws_kms": envelope encryption under AWS_KMS_KEY_ID; the master key never leaves KMS.
+    key_cipher: Literal["local", "aws_kms"] = "local"
+    stoke_encryption_key: SecretStr | None = None
+    encryption_key_file: Path = ENV_FILE.parent / ".stoke_encryption_key"
+    aws_kms_key_id: str | None = None
+
+    # Auth0: the tenant domain (e.g. stoke.us.auth0.com) and the API identifier tokens are issued for.
+    auth0_domain: str = ""
+    auth0_audience: str = ""
+
+    # Local development only: a Connect platform key whose accounts are added to every user's view.
+    # Ignored unless DEV_MODE is true. STRIPE_API_KEY is accepted as the older name.
     # SecretStr keeps keys out of reprs, logs and tracebacks.
+    dev_mode: bool = False
     stripe_platform_key: SecretStr | None = Field(
         None, validation_alias=AliasChoices("STRIPE_PLATFORM_KEY", "STRIPE_API_KEY")
     )
     stripe_account_ids: str = ""
     include_platform: bool = True
-
-    # Creator mode: comma-separated keys, each scoped to one creator's own Stripe account.
-    stripe_account_keys: SecretStr = SecretStr("")
-
-    # Currency everything is converted to. Default: the platform's payout currency, else the first account's.
-    reporting_currency: str | None = None
 
     # Key for the opaque customer ids in URLs. Empty: a random key is generated on first run and
     # kept in customer_id_secret_file, so ids survive API key rotation and accounts coming and going.
@@ -33,6 +44,8 @@ class Settings(BaseSettings):
     customer_id_secret_file: Path = ENV_FILE.parent / ".customer_id_secret"
 
     cors_origin: str = "http://localhost:5173"
+    # Host headers the API answers to; anything else is rejected (guards against DNS rebinding).
+    allowed_hosts: str = "127.0.0.1,localhost"
     cache_ttl_seconds: int = 300
 
     @property
@@ -40,8 +53,14 @@ class Settings(BaseSettings):
         return [a.strip() for a in self.stripe_account_ids.split(",") if a.strip()]
 
     @property
-    def account_keys(self) -> list[str]:
-        return [k.strip() for k in self.stripe_account_keys.get_secret_value().split(",") if k.strip()]
+    def allowed_host_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def dev_platform_key(self) -> str | None:
+        if self.dev_mode and self.stripe_platform_key is not None:
+            return self.stripe_platform_key.get_secret_value() or None
+        return None
 
 
 @lru_cache

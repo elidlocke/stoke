@@ -10,7 +10,13 @@ from app.aggregate import Payment, Subscription, invoices_by_payment_intent, nor
 from app.config import get_settings
 from app.stripe_client import Account, MissingPermission
 
-PI_EXPAND = ["data.customer", "data.latest_charge.balance_transaction", "data.latest_charge.refunds"]
+PI_EXPAND = [
+    "data.customer",
+    "data.latest_charge.balance_transaction",
+    "data.latest_charge.refunds",
+    # Includes the dispute's balance transactions: exactly what it withdrew, charged and returned.
+    "data.latest_charge.dispute",
+]
 INVOICE_EXPAND = ["data.payments"]
 # The latest invoice supplies the plan name and a copy of the email that survives customer deletion.
 SUBSCRIPTION_EXPAND = ["data.customer", "data.latest_invoice"]
@@ -49,6 +55,14 @@ def clear_cache() -> None:
     _subscriptions_cache().clear()
 
 
+def clear_credential(credential_id: object) -> None:
+    """Drop what was read with one stored key, after it's replaced or removed."""
+    suffix = f":{credential_id}"
+    for cache in (_cache(), _subscriptions_cache()):
+        for key in [k for k in cache if k.endswith(suffix)]:
+            cache.pop(key, None)
+
+
 def _covers(cached_since: int | None, since: int | None) -> bool:
     return cached_since is None or (since is not None and cached_since <= since)
 
@@ -71,7 +85,7 @@ async def payments_since(account: Account, since: int | None, refresh: bool = Fa
     cached window rather than calling Stripe again.
     """
     cache = _cache()
-    cached = cache.get(account.id)
+    cached = cache.get(account.cache_key)
     if cached and not refresh and _covers(cached.since, since):
         return [p for p in cached.payments if since is None or p.created >= since]
 
@@ -87,14 +101,14 @@ async def payments_since(account: Account, since: int | None, refresh: bool = Fa
     payments = [
         p for pi in intents if (p := normalize_payment(pi, by_pi.get(pi["id"]), account.id)) is not None
     ]
-    cache[account.id] = _CachedWindow(since=since, payments=payments)
+    cache[account.cache_key] = _CachedWindow(since=since, payments=payments)
     return payments
 
 
 async def subscriptions(account: Account, refresh: bool = False) -> list[Subscription]:
     """Every subscription on `account`, in any status, including canceled ones."""
     cache = _subscriptions_cache()
-    if not refresh and (cached := cache.get(account.id)) is not None:
+    if not refresh and (cached := cache.get(account.cache_key)) is not None:
         return cached
 
     params = {"limit": 100, "status": "all", "expand": SUBSCRIPTION_EXPAND}
@@ -105,5 +119,5 @@ async def subscriptions(account: Account, refresh: bool = False) -> list[Subscri
         raise MissingPermission("Subscriptions") from exc
 
     subs = [normalize_subscription(s, account.id) for s in raw]
-    cache[account.id] = subs
+    cache[account.cache_key] = subs
     return subs

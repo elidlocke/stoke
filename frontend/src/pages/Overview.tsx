@@ -4,8 +4,9 @@ import { Link } from 'react-router'
 import { api, type Window } from '../api'
 import { Chip } from '../components/Chip'
 import { Money } from '../components/Money'
+import { TrendCharts } from '../components/TrendCharts'
 import { formatRelative, formatYears } from '../format'
-import { cancelReason, subscriptionStatus } from '../labels'
+import { cancelReason, startedWith } from '../labels'
 import { customerPath } from '../routes'
 
 // The home page summarizes the past month. Query keys match the list pages' defaults,
@@ -18,11 +19,13 @@ export function Overview() {
     <>
       <header className="page-header">
         <h1>Overview</h1>
-        <span className="muted">The past month across all accounts</span>
+        <span className="muted">Across all accounts</span>
       </header>
+      <TrendCharts />
+      <h2 className="section-title">The past month</h2>
       <div className="cards">
         <TopCustomersCard />
-        <NewSubscribersCard />
+        <NewCustomersCard />
         <AnniversariesCard />
         <CancellationsCard />
       </div>
@@ -32,43 +35,41 @@ export function Overview() {
 
 function TopCustomersCard() {
   const q = useQuery({ queryKey: ['leaderboard', '1m', undefined], queryFn: () => api.leaderboard('1m') })
-  const total = q.data?.customers.reduce((sum, c) => sum + c.net_total, 0) ?? 0
   return (
     <Card
       title="Top customers"
       to="/top"
       query={q}
-      count={q.data?.customers.length}
-      stat={q.data && <Money amount={total} currency={q.data.reporting_currency} />}
-      statLabel={(n) => (n === 1 ? 'net from your top customer' : `net from your top ${n} customers`)}
+      count={q.data?.customer_count}
+      statLabel={(n) => `paying customer${n === 1 ? '' : 's'}`}
       empty="No paying customers this month."
     >
       {q.data?.customers.slice(0, PREVIEW).map((c) => (
         <Row key={c.email} customer={c}>
-          <Money amount={c.net_total} currency={q.data.reporting_currency} />
+          <Money amount={c.take_home} currency={q.data.reporting_currency} />
         </Row>
       ))}
     </Card>
   )
 }
 
-function NewSubscribersCard() {
-  const q = useQuery({ queryKey: ['new-subscribers', RANGE, undefined], queryFn: () => api.newSubscribers(RANGE) })
+function NewCustomersCard() {
+  const q = useQuery({ queryKey: ['new-customers', RANGE, undefined], queryFn: () => api.newCustomers(RANGE) })
   return (
     <Card
-      title="New subscribers"
+      title="New customers"
       to="/new"
       query={q}
       count={q.data?.customers.length}
-      statLabel={(n) => `new subscription${n === 1 ? '' : 's'}`}
-      empty="No new subscribers this month."
+      statLabel={(n) => `new customer${n === 1 ? '' : 's'}`}
+      empty="No new customers this month."
     >
-      {q.data?.customers.slice(0, PREVIEW).map((c, i) => {
-        const status = subscriptionStatus(c.status)
+      {q.data?.customers.slice(0, PREVIEW).map((c) => {
+        const start = startedWith(c)
         return (
-          <Row key={`${c.customer_id}-${i}`} customer={c}>
-            {c.status !== 'active' && <Chip tone={status.tone}>{status.label}</Chip>}
-            <span className="muted">{formatRelative(c.started)}</span>
+          <Row key={c.customer_id} customer={c}>
+            <Chip tone={start.tone}>{start.label}</Chip>
+            <span className="muted">{formatRelative(c.first_seen)}</span>
           </Row>
         )
       })}
@@ -126,7 +127,6 @@ function Card({
   to,
   query,
   count,
-  stat,
   statLabel,
   empty,
   children,
@@ -135,7 +135,6 @@ function Card({
   to: string
   query: { isPending: boolean; isError: boolean; error: Error | null }
   count: number | undefined
-  stat?: ReactNode // defaults to the count
   statLabel: (count: number) => string
   empty: string
   children: ReactNode
@@ -155,7 +154,7 @@ function Card({
       {count !== undefined && (
         <>
           <div className="card-stat">
-            <span className="stat-value">{stat ?? <span className="num">{count}</span>}</span>
+            <span className="stat-value num">{count}</span>
             <span className="muted">{statLabel(count)}</span>
           </div>
           {count === 0 ? <p className="muted">{empty}</p> : <ul className="card-list">{children}</ul>}

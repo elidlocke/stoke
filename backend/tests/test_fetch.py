@@ -51,7 +51,7 @@ async def test_payments_joined_to_invoices_with_pagination_header_and_expand():
     assert first.request.headers["Stripe-Account"] == "acct_conn"
     q = query(first)
     assert q["created[gte]"] == [str(100 * 86400)]
-    assert [q[f"expand[{i}]"][0] for i in range(3)] == fetch.PI_EXPAND
+    assert [q[f"expand[{i}]"][0] for i in range(len(fetch.PI_EXPAND))] == fetch.PI_EXPAND
     assert query(second)["starting_after"] == ["pi_1"]
     # Invoices are fetched from further back so dunning retries still find their invoice.
     assert query(invoices.calls[0])["created[gte]"] == [str(100 * 86400 - fetch.INVOICE_LOOKBACK)]

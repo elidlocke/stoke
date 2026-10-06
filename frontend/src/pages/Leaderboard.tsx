@@ -21,7 +21,7 @@ export function Leaderboard() {
       <header className="page-header">
         <h1>Top customers</h1>
         {board.data && (
-          <span className="muted">All amounts in {board.data.reporting_currency.toUpperCase()}, net of refunds</span>
+          <span className="muted">Take-home in {board.data.reporting_currency.toUpperCase()}: after refunds and fees</span>
         )}
       </header>
 
@@ -53,7 +53,7 @@ export function Leaderboard() {
                   <tr>
                     <th className="rank">#</th>
                     <th>Customer</th>
-                    <th className="right">Net paid</th>
+                    <th className="right">Take-home</th>
                     <th className="right">Payments</th>
                     <th>Last payment</th>
                     {multipleAccounts && <th>Accounts</th>}
@@ -67,7 +67,7 @@ export function Leaderboard() {
                         <Link to={customerPath(c.customer_id)}>{c.email}</Link>
                       </td>
                       <td className="right">
-                        <Money amount={c.net_total} currency={board.data.reporting_currency} />
+                        <Money amount={c.take_home} currency={board.data.reporting_currency} />
                       </td>
                       <td className="right num">{c.payment_count}</td>
                       <td>{formatDate(c.last_seen)}</td>

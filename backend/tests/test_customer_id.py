@@ -1,4 +1,5 @@
 from app import customer_id as cid
+from app import secret_file
 from app.config import get_settings
 
 
@@ -38,5 +39,5 @@ def test_generated_key_is_persisted_and_private(tmp_path, monkeypatch):
     a = cid.customer_id("ada@example.com")
     assert len(path.read_text()) == 64 and path.stat().st_mode & 0o777 == 0o600
 
-    cid._file_keys.clear()  # as after a restart
+    secret_file._cache.clear()  # as after a restart
     assert cid.customer_id("ada@example.com") == a

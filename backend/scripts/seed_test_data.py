@@ -1,7 +1,9 @@
 """Seed a Stripe sandbox with customers that look like a Substack creator's account.
 
 Usage (from backend/):
-    uv run python scripts/seed_test_data.py
+    uv run python scripts/seed_test_data.py                 # every scenario
+    uv run python scripts/seed_test_data.py --list          # list scenario names
+    uv run python scripts/seed_test_data.py dispute_lost …  # only these scenarios
 
 Uses STRIPE_SEED_KEY from the repo-root .env. It must be a sandbox (test mode) secret key;
 the script refuses live keys.
@@ -11,10 +13,15 @@ cases a small account may not have hit yet. Everything is created "now": Stripe 
 payments, so there are no renewals ("Renewed" events) and no anniversaries in seeded data.
 
 Each run creates new customers; running it twice doubles the data.
+
+Disputes use Stripe's test cards, which open a dispute a few seconds after a successful charge.
+In test mode the outcome is chosen by the evidence submitted: "winning_evidence" or
+"losing_evidence". https://docs.stripe.com/testing#disputes
 """
 
 import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -28,6 +35,15 @@ GOOD_CARD = "pm_card_visa"
 # Attaches to a customer fine, then every charge on it is declined ("Your card was declined.").
 FAILING_CARD = "pm_card_chargeCustomerFail"
 INSUFFICIENT_FUNDS_CARD = "pm_card_visa_chargeDeclinedInsufficientFunds"
+# Charges succeed, then the cardholder disputes them: as fraud, as "product not received", or as
+# an inquiry (a question from the bank that doesn't withdraw funds unless it escalates).
+DISPUTE_FRAUD_CARD = "pm_card_createDispute"
+DISPUTE_NOT_RECEIVED_CARD = "pm_card_createDisputeProductNotReceived"
+DISPUTE_INQUIRY_CARD = "pm_card_createDisputeInquiry"
+# Charges succeed, but refunds on them fail asynchronously.
+REFUND_FAILS_CARD = "pm_card_refundFail"
+
+DISPUTE_WAIT_SECONDS = 60
 
 
 class Seeder:
@@ -101,6 +117,25 @@ class Seeder:
         self.c.v1.invoices.finalize_invoice(inv.id)
         self.c.v1.invoices.pay(inv.id)
         return inv
+
+    def subscription_payment_intent(self, sub) -> str:
+        return self.invoice_payment_intent(sub.latest_invoice)
+
+    def wait_for_dispute(self, payment_intent_id):
+        """Stripe opens test-card disputes asynchronously, a few seconds after the charge."""
+        deadline = time.monotonic() + DISPUTE_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            disputes = self.c.v1.disputes.list({"payment_intent": payment_intent_id, "limit": 1}).data
+            if disputes:
+                return disputes[0]
+            time.sleep(2)
+        raise TimeoutError(f"no dispute opened within {DISPUTE_WAIT_SECONDS}s")
+
+    def submit_evidence(self, dispute_id, outcome):
+        # Test mode resolves the dispute from this magic value, usually within a minute.
+        self.c.v1.disputes.update(dispute_id, {
+            "evidence": {"uncategorized_text": f"{outcome}_evidence"}, "submit": True,
+        })
 
     def payment_intent(self, customer_id, amount, description, card, confirm=True):
         return self.c.v1.payment_intents.create({
@@ -199,6 +234,10 @@ class Seeder:
         self.c.v1.subscriptions.cancel(self.subscribe(cus, "monthly").id)
         self.subscribe(cus, "annual")
 
+    def coaching_client(self):
+        """New customer whose first purchase was a one-off paid coaching session, not a subscription."""
+        self.one_off_invoice(self.customer("coaching@example.com"), "1:1 coaching session (60 min)", 15000)
+
     def no_invoice(self):
         """Payments made without an invoice: a success, a declined-then-canceled one, and an abandoned one."""
         cus = self.customer("no-invoice@example.com")
@@ -210,16 +249,96 @@ class Seeder:
         # Never confirmed, like an abandoned checkout; the app should ignore it.
         self.payment_intent(cus, 1000, "Merch: sticker", GOOD_CARD, confirm=False)
 
+    # ---- refunds ----
+
+    def refunded_twice(self):
+        """Founding member refunded twice: 20.00 as a goodwill credit, later 30.00 more."""
+        pi = self.subscription_payment_intent(self.subscribe(self.customer("refunded-twice@example.com"), "founding"))
+        self.c.v1.refunds.create({"payment_intent": pi, "amount": 2000, "reason": "requested_by_customer"})
+        self.c.v1.refunds.create({"payment_intent": pi, "amount": 3000, "reason": "requested_by_customer"})
+
+    def refunded_tip(self):
+        """Monthly subscriber whose one-off tip was refunded (a duplicate), but not the subscription."""
+        cus = self.customer("refunded-tip@example.com")
+        self.subscribe(cus, "monthly")
+        tip = self.one_off_invoice(cus, "Tip", 1500)
+        self.c.v1.refunds.create({"payment_intent": self.invoice_payment_intent(tip.id), "reason": "duplicate"})
+
+    def refund_failed(self):
+        """Annual subscriber whose refund failed (e.g. the card was closed): the money stays with the creator."""
+        sub = self.subscribe(self.customer("refund-failed@example.com", card=REFUND_FAILS_CARD), "annual")
+        self.c.v1.refunds.create({"payment_intent": self.subscription_payment_intent(sub)})
+
+    def foreign_refund(self):
+        """Pays in a foreign currency and was half refunded, so the refund is converted too."""
+        sub = self.subscribe(self.customer(f"{self.foreign}-refunded@example.com"), "monthly_foreign")
+        self.c.v1.refunds.create({"payment_intent": self.subscription_payment_intent(sub), "amount": 300})
+
+    # ---- disputes ----
+
+    def dispute_lost(self):
+        """Monthly subscriber disputed the charge as fraud; the creator accepted it (lost): amount and fee withdrawn."""
+        sub = self.subscribe(self.customer("dispute-lost@example.com", card=DISPUTE_FRAUD_CARD), "monthly")
+        self.c.v1.disputes.close(self.wait_for_dispute(self.subscription_payment_intent(sub)).id)
+
+    def dispute_lost_with_evidence(self):
+        """Annual subscriber disputed as "product not received"; the evidence lost."""
+        sub = self.subscribe(self.customer("dispute-lost-evidence@example.com", card=DISPUTE_NOT_RECEIVED_CARD), "annual")
+        self.submit_evidence(self.wait_for_dispute(self.subscription_payment_intent(sub)).id, "losing")
+
+    def dispute_won(self):
+        """Founding member disputed as fraud; the evidence won, so the funds come back (the fee may not)."""
+        sub = self.subscribe(self.customer("dispute-won@example.com", card=DISPUTE_FRAUD_CARD), "founding")
+        self.submit_evidence(self.wait_for_dispute(self.subscription_payment_intent(sub)).id, "winning")
+
+    def dispute_open(self):
+        """Annual subscriber with a fraud dispute still awaiting a response: funds withdrawn, outcome unknown."""
+        sub = self.subscribe(self.customer("dispute-open@example.com", card=DISPUTE_FRAUD_CARD), "annual")
+        self.wait_for_dispute(self.subscription_payment_intent(sub))
+
+    def dispute_inquiry(self):
+        """Monthly subscriber's bank sent an inquiry: a warning, no funds withdrawn yet."""
+        sub = self.subscribe(self.customer("dispute-inquiry@example.com", card=DISPUTE_INQUIRY_CARD), "monthly")
+        self.wait_for_dispute(self.subscription_payment_intent(sub))
+
+    def dispute_one_off(self):
+        """One-off purchase without an invoice, disputed as "product not received" and still open."""
+        # (A partly refunded charge that's later disputed can't be staged: test cards open the dispute
+        # as soon as the charge succeeds, and Stripe refuses refunds on a disputed charge.)
+        cus = self.customer("dispute-one-off@example.com", card=DISPUTE_NOT_RECEIVED_CARD)
+        pi = self.payment_intent(cus, 6000, "Workshop ticket", DISPUTE_NOT_RECEIVED_CARD)
+        self.wait_for_dispute(pi.id)
+
 
 SCENARIOS: list[Callable[[Seeder], None]] = [
     Seeder.subscriber, Seeder.annual, Seeder.founding, Seeder.upgraded,
     Seeder.recovered, Seeder.churned, Seeder.refunded, Seeder.partially_refunded,
     Seeder.tipper, Seeder.foreign_reader, Seeder.deleted, Seeder.duplicate_email, Seeder.no_invoice,
-    Seeder.cancelled, Seeder.cancelling, Seeder.won_back,
+    Seeder.cancelled, Seeder.cancelling, Seeder.won_back, Seeder.coaching_client,
+    Seeder.refunded_twice, Seeder.refunded_tip, Seeder.refund_failed, Seeder.foreign_refund,
+    Seeder.dispute_lost, Seeder.dispute_lost_with_evidence, Seeder.dispute_won, Seeder.dispute_open,
+    Seeder.dispute_inquiry, Seeder.dispute_one_off,
 ]
 
 
+def _summary(scenario: Callable[[Seeder], None]) -> str:
+    return f"{scenario.__name__}: {scenario.__doc__.strip().splitlines()[0]}"
+
+
+def selected_scenarios(names: list[str]) -> list[Callable[[Seeder], None]]:
+    by_name = {s.__name__: s for s in SCENARIOS}
+    if unknown := [n for n in names if n not in by_name]:
+        sys.exit(f"Unknown scenario(s): {', '.join(unknown)}. Run with --list to see them.")
+    return [by_name[n] for n in names] or SCENARIOS
+
+
 def main():
+    args = sys.argv[1:]
+    if "--list" in args:
+        print("\n".join(_summary(s) for s in SCENARIOS))
+        return
+    scenarios = selected_scenarios(args)
+
     load_dotenv(ENV_FILE)
     key = os.environ.get("STRIPE_SEED_KEY", "")
     if not key.startswith(("sk_test_", "rk_test_")):
@@ -237,15 +356,16 @@ def main():
 
     seeder = Seeder(client, currency)
     failed = 0
-    for scenario in SCENARIOS:
-        label = f"{scenario.__name__}: {scenario.__doc__.strip().splitlines()[0]}"
+    for scenario in scenarios:
+        label = _summary(scenario)
         try:
             scenario(seeder)
             print(f"  ✓ {label}")
-        except stripe.StripeError as exc:
+        except (stripe.StripeError, TimeoutError) as exc:
             failed += 1
-            print(f"  ✗ {label}\n      {type(exc).__name__}: {exc.user_message or exc}")
-    print(f"\n{len(SCENARIOS) - failed} of {len(SCENARIOS)} scenarios seeded.")
+            message = exc.user_message or exc if isinstance(exc, stripe.StripeError) else exc
+            print(f"  ✗ {label}\n      {type(exc).__name__}: {message}")
+    print(f"\n{len(scenarios) - failed} of {len(scenarios)} scenarios seeded.")
     sys.exit(1 if failed else 0)
 
 

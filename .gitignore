@@ -1,6 +1,8 @@
 .env
 # Generated key for opaque customer ids (see backend/app/customer_id.py).
 .customer_id_secret
+# Generated master key for stored Stripe keys (see backend/app/crypto.py).
+.stoke_encryption_key
 .venv/
 __pycache__/
 .pytest_cache/

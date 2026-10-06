@@ -9,18 +9,23 @@ from app.models import (
     AccountsResponse,
     AnniversariesResponse,
     AnniversaryEntry,
+    AtRiskEntry,
+    AtRiskResponse,
     CancellationEntry,
     CancellationsResponse,
     CustomerProfileResponse,
     CustomerSummary,
     LeaderboardEntry,
     LeaderboardResponse,
-    NewSubscriberEntry,
-    NewSubscribersResponse,
+    NewCustomerEntry,
+    NewCustomersResponse,
     Period,
     TimelineEventOut,
+    TrendMonthOut,
+    TrendsResponse,
     Window,
 )
+from app.auth import CurrentUser
 from app.customer_id import customer_id, resolve
 from app.stripe_client import Account, AccountScope, MissingPermission, get_scope
 
@@ -59,8 +64,8 @@ async def _subscriptions(accts: list[Account], refresh: bool) -> list[Subscripti
     return [s for ss in per_account for s in ss]
 
 
-async def accounts() -> AccountsResponse:
-    scope = await get_scope()
+async def accounts(user: CurrentUser) -> AccountsResponse:
+    scope = await get_scope(user)
     return AccountsResponse(
         reporting_currency=scope.reporting_currency,
         accounts=[
@@ -76,25 +81,27 @@ async def accounts() -> AccountsResponse:
 
 
 async def leaderboard(
-    period: Period, limit: int, account_id: str | None, refresh: bool
+    user: CurrentUser, period: Period, limit: int, account_id: str | None, refresh: bool
 ) -> LeaderboardResponse:
-    scope = await get_scope(refresh=refresh)
+    scope = await get_scope(user, refresh=refresh)
     accts = _select(scope, account_id)
     since = aggregate.period_start(period)
     payments = await _payments(accts, since, scope.reporting_currency, refresh)
-    ranked = aggregate.rank_customers(payments, since)[:limit]
+    all_ranked = aggregate.rank_customers(payments, since)
+    ranked = all_ranked[:limit]
 
     return LeaderboardResponse(
         period=period,
         since=since,
         reporting_currency=scope.reporting_currency,
         unconverted_count=aggregate.unconverted_count(payments),
+        customer_count=len(all_ranked),
         customers=[
             LeaderboardEntry(
                 rank=i,
                 email=r.email,
                 customer_id=customer_id(r.email),
-                net_total=r.net_total,
+                take_home=r.take_home,
                 payment_count=r.payment_count,
                 last_seen=r.last_seen,
                 accounts=sorted(r.accounts),
@@ -104,15 +111,15 @@ async def leaderboard(
     )
 
 
-async def _subscriptions_if_permitted(accts: list[Account]) -> list[Subscription]:
+async def _subscriptions_if_permitted(accts: list[Account], refresh: bool = False) -> list[Subscription]:
     try:
-        return await _subscriptions(accts, refresh=False)
+        return await _subscriptions(accts, refresh)
     except MissingPermission:
         return []
 
 
-async def customer_profile(cid: str) -> CustomerProfileResponse:
-    scope = await get_scope()
+async def customer_profile(user: CurrentUser, cid: str) -> CustomerProfileResponse:
+    scope = await get_scope(user)
     # Filter the full payment history rather than using Stripe Search: search can't query billing
     # or receipt emails, and filtering matches the leaderboard's email attribution exactly.
     # The history is cached, so this is shared with the "all time" leaderboard.
@@ -137,15 +144,17 @@ async def customer_profile(cid: str) -> CustomerProfileResponse:
     )
 
 
-async def cancellations(window: Window, account_id: str | None, refresh: bool) -> CancellationsResponse:
-    scope = await get_scope(refresh=refresh)
+async def cancellations(
+    user: CurrentUser, window: Window, account_id: str | None, refresh: bool
+) -> CancellationsResponse:
+    scope = await get_scope(user, refresh=refresh)
     accts = _select(scope, account_id)
     since = aggregate.window_start(window)
     # Lifetime value needs the full payment history (cached, and shared with the profile page).
     payments, subs = await asyncio.gather(
         _payments(accts, None, scope.reporting_currency, refresh), _subscriptions(accts, refresh)
     )
-    ltv = {r.email: r.net_total for r in aggregate.rank_customers(payments, None)}
+    ltv = {r.email: r.take_home for r in aggregate.rank_customers(payments, None)}
     now = int(datetime.now(UTC).timestamp())
 
     return CancellationsResponse(
@@ -166,14 +175,18 @@ async def cancellations(window: Window, account_id: str | None, refresh: bool) -
                 feedback=c.sub.cancel_feedback,
                 lifetime_value=ltv.get(c.sub.email, 0),
                 resubscribed=c.resubscribed,
+                current_plan=c.current.plan if c.current else None,
+                current_since=c.current.started if c.current else None,
             )
             for c in aggregate.cancellations(subs, since)
         ],
     )
 
 
-async def anniversaries(window: Window, account_id: str | None, refresh: bool) -> AnniversariesResponse:
-    scope = await get_scope(refresh=refresh)
+async def anniversaries(
+    user: CurrentUser, window: Window, account_id: str | None, refresh: bool
+) -> AnniversariesResponse:
+    scope = await get_scope(user, refresh=refresh)
     accts = _select(scope, account_id)
     now = datetime.now(UTC)
     since = aggregate.window_start(window, now)
@@ -194,7 +207,7 @@ async def anniversaries(window: Window, account_id: str | None, refresh: bool) -
                 anniversary=a.date,
                 first_paid=a.customer.first_seen,
                 last_paid=a.customer.last_seen,
-                lifetime_value=a.customer.net_total,
+                lifetime_value=a.customer.take_home,
                 payment_count=a.customer.payment_count,
                 subscribed=a.subscribed,
                 accounts=sorted(a.customer.accounts),
@@ -204,25 +217,61 @@ async def anniversaries(window: Window, account_id: str | None, refresh: bool) -
     )
 
 
-async def new_subscribers(window: Window, account_id: str | None, refresh: bool) -> NewSubscribersResponse:
-    scope = await get_scope(refresh=refresh)
+async def new_customers(
+    user: CurrentUser, window: Window, account_id: str | None, refresh: bool
+) -> NewCustomersResponse:
+    scope = await get_scope(user, refresh=refresh)
     accts = _select(scope, account_id)
     since = aggregate.window_start(window)
-    subs = await _subscriptions(accts, refresh)
+    # The full history, to tell a first purchase from a returning customer. Without Subscriptions
+    # access this still lists customers who paid, just not unpaid trials.
+    payments, subs = await asyncio.gather(
+        _payments(accts, None, scope.reporting_currency, refresh), _subscriptions_if_permitted(accts, refresh)
+    )
 
-    return NewSubscribersResponse(
+    return NewCustomersResponse(
         window=window,
         since=since,
+        reporting_currency=scope.reporting_currency,
         customers=[
-            NewSubscriberEntry(
-                email=n.sub.email,
-                customer_id=customer_id(n.sub.email),
-                account_id=n.sub.account_id,
-                plan=n.sub.plan,
-                started=n.sub.started,
-                status=n.sub.status,
-                returning=n.returning,
-            )
-            for n in aggregate.new_subscriptions(subs, since)
+            NewCustomerEntry(customer_id=customer_id(n.email), **asdict(n))
+            for n in aggregate.new_customers(payments, subs, since)
         ],
+    )
+
+
+async def at_risk(user: CurrentUser, account_id: str | None, refresh: bool) -> AtRiskResponse:
+    scope = await get_scope(user, refresh=refresh)
+    accts = _select(scope, account_id)
+    # The full history, for disputes on old payments and lifetime value. Without Subscriptions
+    # access this still lists disputes.
+    payments, subs = await asyncio.gather(
+        _payments(accts, None, scope.reporting_currency, refresh), _subscriptions_if_permitted(accts, refresh)
+    )
+    ltv = {r.email: r.take_home for r in aggregate.rank_customers(payments, None)}
+    now = int(datetime.now(UTC).timestamp())
+
+    return AtRiskResponse(
+        reporting_currency=scope.reporting_currency,
+        customers=[
+            AtRiskEntry(customer_id=customer_id(r.email), lifetime_value=ltv.get(r.email, 0), **asdict(r))
+            for r in aggregate.at_risk(payments, subs, now)
+        ],
+    )
+
+
+async def trends(user: CurrentUser, refresh: bool) -> TrendsResponse:
+    scope = await get_scope(user, refresh=refresh)
+    # The full history, to tell a first purchase from a returning customer.
+    payments = await _payments(scope.accounts, None, scope.reporting_currency, refresh)
+    try:
+        subs, churn_available = await _subscriptions(scope.accounts, refresh), True
+    except MissingPermission:
+        subs, churn_available = [], False
+
+    return TrendsResponse(
+        reporting_currency=scope.reporting_currency,
+        months=[TrendMonthOut(**asdict(m)) for m in aggregate.trends(payments, subs, datetime.now(UTC))],
+        churn_available=churn_available,
+        unconverted_count=aggregate.unconverted_count(payments),
     )

@@ -11,32 +11,12 @@ CUSTOMER_ID_SECRET_FILE. Losing or changing it changes every id.
 
 import hashlib
 import hmac
-import os
-import secrets
 from collections.abc import Iterable
-from pathlib import Path
 
 from app.config import get_settings
+from app.secret_file import read_or_create
 
 ID_LENGTH = 24  # hex characters: 96 bits
-
-_file_keys: dict[Path, bytes] = {}
-
-
-def _file_key(path: Path) -> bytes:
-    if path not in _file_keys:
-        try:
-            # O_EXCL: if several workers start at once, exactly one creates the key; the rest read it.
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w") as f:
-                f.write(secrets.token_hex(32))
-        except FileExistsError:
-            pass
-        key = path.read_text().strip()
-        if not key:
-            raise RuntimeError(f"{path} is empty; delete it to generate a new customer id key")
-        _file_keys[path] = key.encode()
-    return _file_keys[path]
 
 
 def _key() -> bytes:
@@ -44,7 +24,7 @@ def _key() -> bytes:
     # An empty value (as in .env.example) means unset: an empty key would make ids guessable.
     if secret := settings.customer_id_secret and settings.customer_id_secret.get_secret_value():
         return secret.encode()
-    return _file_key(settings.customer_id_secret_file)
+    return read_or_create(settings.customer_id_secret_file).encode()
 
 
 def customer_id(email: str) -> str:

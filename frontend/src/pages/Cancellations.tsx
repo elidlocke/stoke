@@ -49,7 +49,7 @@ export function Cancellations() {
                   <th>Canceled</th>
                   <th>Access</th>
                   <th>Reason</th>
-                  <th className="right">Lifetime value</th>
+                  <th className="right" title="Lifetime: everything they paid, after refunds and fees">Take-home</th>
                   {multipleAccounts && <th>Account</th>}
                 </tr>
               </thead>
@@ -60,26 +60,34 @@ export function Cancellations() {
                     <tr key={`${c.email}-${c.canceled_at}-${i}`}>
                       <td>
                         <Link to={customerPath(c.customer_id)}>{c.email}</Link>
-                        {c.resubscribed && (
-                          <>
-                            {' '}
-                            <Chip tone="ok" title="Has another subscription that's still active">
-                              Resubscribed
-                            </Chip>
-                          </>
-                        )}
                       </td>
                       <td className="wrap">{c.plan ?? <span className="muted">—</span>}</td>
                       <td>
-                        {formatDate(c.canceled_at)} <span className="muted">· {formatRelative(c.canceled_at)}</span>
+                        {formatDate(c.canceled_at)}
+                        <div className="muted">{formatRelative(c.canceled_at)}</div>
                       </td>
-                      <td>
+                      <td className="wrap">
                         {c.ended ? (
                           <span className="muted">Ended{c.ends_at && ` ${formatDate(c.ends_at)}`}</span>
                         ) : (
                           <Chip tone="warn" title="Canceled at period end: still subscribed until then">
                             Active until {c.ends_at ? formatDate(c.ends_at) : 'period end'}
                           </Chip>
+                        )}
+                        {c.current_since != null && (
+                          <div className="access-now">
+                            <Chip
+                              tone="ok"
+                              title={
+                                c.resubscribed
+                                  ? 'Came back with a new subscription after canceling'
+                                  : 'Has another subscription that was already running'
+                              }
+                            >
+                              {c.resubscribed ? `Resubscribed ${formatDate(c.current_since)}` : 'Still subscribed'}
+                            </Chip>
+                            {c.current_plan && <div className="muted">{c.current_plan}</div>}
+                          </div>
                         )}
                       </td>
                       <td>

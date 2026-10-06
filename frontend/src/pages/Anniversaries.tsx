@@ -47,7 +47,7 @@ export function Anniversaries() {
                   <th>Milestone</th>
                   <th>Anniversary</th>
                   <th>Customer since</th>
-                  <th className="right">Lifetime value</th>
+                  <th className="right" title="Everything they paid, after refunds and fees">Lifetime take-home</th>
                   <th className="right">Payments</th>
                   <th>Status</th>
                   {multipleAccounts && <th>Accounts</th>}
