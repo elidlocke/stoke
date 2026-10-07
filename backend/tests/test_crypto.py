@@ -56,15 +56,13 @@ def test_master_key_is_never_in_repr():
     assert master.hex() not in repr(LocalCipher(master))
 
 
-def test_generated_master_key_is_persisted_and_private(tmp_path, monkeypatch):
-    path = tmp_path / ".stoke_encryption_key"
+def test_missing_master_key_is_an_error(monkeypatch):
     monkeypatch.setenv("STOKE_ENCRYPTION_KEY", "")
-    monkeypatch.setenv("ENCRYPTION_KEY_FILE", str(path))
     get_settings.cache_clear()
     crypto.get_cipher.cache_clear()
 
-    crypto.get_cipher()
-    assert len(path.read_text()) == 64 and path.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(crypto.MissingSecret, match="STOKE_ENCRYPTION_KEY"):
+        crypto.get_cipher()
 
 
 class FakeKms:

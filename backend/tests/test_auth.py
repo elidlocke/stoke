@@ -101,3 +101,9 @@ async def test_rotated_signing_key_is_fetched(db, auth0, api):
 async def test_unknown_host_is_rejected(db, auth0):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://evil.example") as client:
         assert (await client.get("/api/me", headers=bearer(token()))).status_code == 400
+
+
+async def test_health_check_skips_host_check():
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://10.0.0.5") as client:
+        assert (await client.get("/api/healthz")).json() == {"ok": True}
+        assert (await client.get("/api/me")).status_code == 400

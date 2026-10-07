@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 # Repo-root .env, resolved from this file so it loads regardless of the working directory.
@@ -17,11 +17,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://stoke:stoke@127.0.0.1:5432/stoke"
 
     # Encryption of stored Stripe keys (see app/crypto.py). "local": a 32-byte key from
-    # STOKE_ENCRYPTION_KEY (base64) or, if unset, generated on first run into encryption_key_file.
-    # "aws_kms": envelope encryption under AWS_KMS_KEY_ID; the master key never leaves KMS.
+    # STOKE_ENCRYPTION_KEY (64 hex characters). "aws_kms": envelope encryption under AWS_KMS_KEY_ID;
+    # the master key never leaves KMS.
     key_cipher: Literal["local", "aws_kms"] = "local"
     stoke_encryption_key: SecretStr | None = None
-    encryption_key_file: Path = ENV_FILE.parent / ".stoke_encryption_key"
     aws_kms_key_id: str | None = None
 
     # Auth0: the tenant domain (e.g. stoke.us.auth0.com) and the API identifier tokens are issued for.
@@ -38,15 +37,25 @@ class Settings(BaseSettings):
     stripe_account_ids: str = ""
     include_platform: bool = True
 
-    # Key for the opaque customer ids in URLs. Empty: a random key is generated on first run and
-    # kept in customer_id_secret_file, so ids survive API key rotation and accounts coming and going.
+    # Key for the opaque customer ids in URLs (see app/customer_id.py). Required.
     customer_id_secret: SecretStr | None = None
-    customer_id_secret_file: Path = ENV_FILE.parent / ".customer_id_secret"
 
     cors_origin: str = "http://localhost:5173"
     # Host headers the API answers to; anything else is rejected (guards against DNS rebinding).
     allowed_hosts: str = "127.0.0.1,localhost"
     cache_ttl_seconds: int = 300
+    # The built frontend (frontend/dist), served by the API in the production image. Unset in
+    # development, where the Vite dev server serves it.
+    static_dir: Path | None = None
+
+    @field_validator("database_url")
+    @classmethod
+    def _asyncpg_url(cls, url: str) -> str:
+        # Hosts like Render hand out postgres:// or postgresql:// URLs; the app connects via asyncpg.
+        for scheme in ("postgres://", "postgresql://"):
+            if url.startswith(scheme):
+                return "postgresql+asyncpg://" + url.removeprefix(scheme)
+        return url
 
     @property
     def account_allowlist(self) -> list[str]:

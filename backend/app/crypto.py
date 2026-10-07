@@ -8,8 +8,7 @@ Both layers bind associated data (the owner and record ids): ciphertext copied o
 another user's account fails to decrypt instead of quietly working there.
 
 Master key:
-- "local": a 32-byte key from STOKE_ENCRYPTION_KEY (hex), else generated on first run into
-  .stoke_encryption_key next to .env. For development and single-host installs.
+- "local": a 32-byte key from STOKE_ENCRYPTION_KEY (hex). For development and simple hosts.
 - "aws_kms": the master key lives in AWS KMS and never leaves it. KMS generates and unwraps each
   DEK (using the associated data as its encryption context), and every unwrap is permissioned and
   logged by CloudTrail. Needs the `kms` extra (boto3) and AWS_KMS_KEY_ID.
@@ -24,7 +23,6 @@ from typing import Protocol
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.config import get_settings
-from app.secret_file import read_or_create
 
 NONCE_BYTES = 12
 
@@ -38,6 +36,15 @@ class Sealed:
 
 class DecryptionError(Exception):
     pass
+
+
+class MissingSecret(RuntimeError):
+    def __init__(self, name: str):
+        super().__init__(
+            f"{name} isn't set. Generate one with "
+            "`python3 -c 'import secrets; print(secrets.token_hex(32))'` and add it to .env "
+            "(or the host's environment). Back it up: changing it later breaks existing data."
+        )
 
 
 class KeyCipher(Protocol):
@@ -130,6 +137,6 @@ def get_cipher() -> KeyCipher:
             raise RuntimeError("KEY_CIPHER=aws_kms needs AWS_KMS_KEY_ID")
         return KmsCipher(settings.aws_kms_key_id)
     # An empty value (as in .env.example) means unset.
-    if settings.stoke_encryption_key and (hex_key := settings.stoke_encryption_key.get_secret_value()):
-        return LocalCipher(bytes.fromhex(hex_key))
-    return LocalCipher(bytes.fromhex(read_or_create(settings.encryption_key_file)))
+    if not (settings.stoke_encryption_key and (hex_key := settings.stoke_encryption_key.get_secret_value())):
+        raise MissingSecret("STOKE_ENCRYPTION_KEY")
+    return LocalCipher(bytes.fromhex(hex_key))

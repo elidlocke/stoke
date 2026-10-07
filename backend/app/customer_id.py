@@ -5,8 +5,7 @@ by hashing guessed addresses; the key prevents that, so it must be secret: not d
 anything public such as account names or ids. It's also independent of API keys and of which
 accounts are connected, so ids (and bookmarked links) survive key rotation and Stripe App installs.
 
-The key is CUSTOMER_ID_SECRET if set, else a random key generated on first run and kept in
-CUSTOMER_ID_SECRET_FILE. Losing or changing it changes every id.
+The key is CUSTOMER_ID_SECRET, which must be set. Losing or changing it changes every id.
 """
 
 import hashlib
@@ -14,7 +13,7 @@ import hmac
 from collections.abc import Iterable
 
 from app.config import get_settings
-from app.secret_file import read_or_create
+from app.crypto import MissingSecret
 
 ID_LENGTH = 24  # hex characters: 96 bits
 
@@ -22,9 +21,9 @@ ID_LENGTH = 24  # hex characters: 96 bits
 def _key() -> bytes:
     settings = get_settings()
     # An empty value (as in .env.example) means unset: an empty key would make ids guessable.
-    if secret := settings.customer_id_secret and settings.customer_id_secret.get_secret_value():
-        return secret.encode()
-    return read_or_create(settings.customer_id_secret_file).encode()
+    if not (secret := settings.customer_id_secret and settings.customer_id_secret.get_secret_value()):
+        raise MissingSecret("CUSTOMER_ID_SECRET")
+    return secret.encode()
 
 
 def customer_id(email: str) -> str:

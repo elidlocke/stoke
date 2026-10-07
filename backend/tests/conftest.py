@@ -1,15 +1,13 @@
 import asyncio
 import copy
 import os
-import tempfile
 import uuid
 
 import dotenv
 
 # Keep the developer's real .env (and its keys) out of tests.
 dotenv.load_dotenv = lambda *args, **kwargs: False
-# Generate the customer id key in a temp dir, not next to the developer's .env.
-os.environ["CUSTOMER_ID_SECRET_FILE"] = os.path.join(tempfile.mkdtemp(), ".customer_id_secret")
+os.environ["CUSTOMER_ID_SECRET"] = "22" * 32
 os.environ["STOKE_ENCRYPTION_KEY"] = "11" * 32
 os.environ["AUTH0_DOMAIN"] = "stoke-test.auth0.local"
 os.environ["AUTH0_AUDIENCE"] = "https://api.stoke.test"

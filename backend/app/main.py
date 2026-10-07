@@ -2,16 +2,17 @@ import logging
 from contextlib import asynccontextmanager
 
 import stripe
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app import credentials, db, service
+from app import credentials, customer_id, db, service
 from app.auth import Unauthenticated
 from app.config import get_settings
-from app.crypto import DecryptionError
+from app.crypto import DecryptionError, get_cipher
 from app.routers import customers, settings
 from app.stripe_client import MissingPermission, NoCredentials
 
@@ -20,6 +21,9 @@ log = logging.getLogger("stoke")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Fail at startup, not on the first request, if a required secret is missing.
+    get_cipher()
+    customer_id.customer_id("startup-check")
     yield
     await db.dispose()
 
@@ -31,10 +35,28 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
-# Rejects requests whose Host isn't ours, so a malicious page can't reach the API via DNS rebinding.
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_settings().allowed_host_list)
+
+
+class HostCheck(TrustedHostMiddleware):
+    """Rejects requests whose Host isn't ours, so a malicious page can't reach the API via DNS
+    rebinding. The health check is exempt: the host's checker may not send our public hostname,
+    and it returns nothing."""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/api/healthz":
+            await self.app(scope, receive, send)
+        else:
+            await super().__call__(scope, receive, send)
+
+
+app.add_middleware(HostCheck, allowed_hosts=get_settings().allowed_host_list)
 app.include_router(customers.router)
 app.include_router(settings.router)
+
+
+@app.get("/api/healthz", include_in_schema=False)
+async def healthz() -> dict:
+    return {"ok": True}
 
 
 # Every response carries customer data or account details: keep it out of browser and proxy caches.
@@ -105,3 +127,20 @@ async def unknown_account(_: Request, exc: service.UnknownAccount) -> JSONRespon
 async def unhandled_error(_: Request, exc: Exception) -> JSONResponse:
     log.exception("Unhandled error", exc_info=exc)
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
+
+
+# In the production image the API also serves the built frontend, so both share one origin.
+# Registered last, so the API routes above take precedence.
+if (static_dir := get_settings().static_dir) is not None:
+    static_root = static_dir.resolve()
+    app.mount("/assets", StaticFiles(directory=static_root / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def frontend(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404)
+        # Files from frontend/public (e.g. favicon.svg); any other path is a client-side route.
+        file = (static_root / path).resolve()
+        if path and file.is_relative_to(static_root) and file.is_file():
+            return FileResponse(file)
+        return FileResponse(static_root / "index.html")
