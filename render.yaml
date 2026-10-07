@@ -31,9 +31,9 @@ services:
         sync: false
       # The service's address. Change both if Render assigns a different name, or when adding a domain.
       - key: ALLOWED_HOSTS
-        value: stoke.onrender.com
+        value: stoke-y4sf.onrender.com
       - key: CORS_ORIGIN
-        value: https://stoke.onrender.com
+        value: https://stoke-y4sf.onrender.com
       - key: AUTH0_DOMAIN
         sync: false
       - key: AUTH0_AUDIENCE
