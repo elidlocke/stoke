@@ -6,11 +6,7 @@ import { ApiError } from '../api'
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
-  { to: '/at-risk', label: 'At risk' },
-  { to: '/top', label: 'Top customers' },
-  { to: '/new', label: 'New customers' },
-  { to: '/anniversaries', label: 'Anniversaries' },
-  { to: '/cancellations', label: 'Cancellations' },
+  { to: '/analytics', label: 'Analytics' },
   { to: '/settings', label: 'Settings' },
 ]
 

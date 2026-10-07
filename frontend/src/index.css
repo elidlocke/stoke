@@ -126,12 +126,42 @@ main {
   }
 }
 
+/* ---- Analytics tabs ---- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+  margin: -12px 0 24px;
+}
+.tabs a {
+  padding: 8px 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tabs a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.tabs a.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
 /* ---- Overview cards ---- */
 
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
   gap: 16px;
+}
+.cards.attention {
+  margin-top: 16px;
 }
 .card {
   background: var(--surface);

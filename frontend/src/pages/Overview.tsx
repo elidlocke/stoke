@@ -6,7 +6,7 @@ import { Chip } from '../components/Chip'
 import { Money } from '../components/Money'
 import { TrendCharts } from '../components/TrendCharts'
 import { formatRelative, formatYears } from '../format'
-import { cancelReason, startedWith } from '../labels'
+import { cancelReason, riskKind, startedWith } from '../labels'
 import { customerPath } from '../routes'
 
 // The home page summarizes the past month. Query keys match the list pages' defaults,
@@ -29,7 +29,37 @@ export function Overview() {
         <AnniversariesCard />
         <CancellationsCard />
       </div>
+      <div className="cards attention">
+        <AtRiskCard />
+      </div>
     </>
+  )
+}
+
+// Not limited to the past month: everyone who can still be saved, most urgent first.
+function AtRiskCard() {
+  const q = useQuery({ queryKey: ['at-risk', undefined], queryFn: () => api.atRisk() })
+  return (
+    <Card
+      title="At risk"
+      to="/analytics/at-risk"
+      query={q}
+      count={q.data?.customers.length}
+      statLabel={(n) => `customer${n === 1 ? '' : 's'} at risk`}
+      empty="No one at risk right now."
+    >
+      {q.data?.customers.slice(0, PREVIEW).map((c, i) => {
+        const kind = riskKind(c.kind)
+        return (
+          <Row key={`${c.kind}-${c.customer_id}-${c.since}-${i}`} customer={c}>
+            <Chip tone={kind.tone} title={kind.title}>
+              {kind.label}
+            </Chip>
+            <span className="muted">{formatRelative(c.deadline ?? c.since)}</span>
+          </Row>
+        )
+      })}
+    </Card>
   )
 }
 
@@ -38,7 +68,7 @@ function TopCustomersCard() {
   return (
     <Card
       title="Top customers"
-      to="/top"
+      to="/analytics/top"
       query={q}
       count={q.data?.customer_count}
       statLabel={(n) => `paying customer${n === 1 ? '' : 's'}`}
@@ -58,7 +88,7 @@ function NewCustomersCard() {
   return (
     <Card
       title="New customers"
-      to="/new"
+      to="/analytics/new"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `new customer${n === 1 ? '' : 's'}`}
@@ -82,7 +112,7 @@ function AnniversariesCard() {
   return (
     <Card
       title="Anniversaries"
-      to="/anniversaries"
+      to="/analytics/anniversaries"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `customer${n === 1 ? '' : 's'} reached a milestone`}
@@ -103,7 +133,7 @@ function CancellationsCard() {
   return (
     <Card
       title="Cancellations"
-      to="/cancellations"
+      to="/analytics/cancellations"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `subscription${n === 1 ? '' : 's'} canceled`}
