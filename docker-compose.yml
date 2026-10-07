@@ -1,5 +1,8 @@
 # Local Postgres for Stoke. `docker compose up -d`, then `cd backend && uv run alembic upgrade head`.
 # Bound to 127.0.0.1 only. The test suite creates its own `stoke_test` database on this server.
+#
+# `docker compose --profile app up --build` also runs the production image (Dockerfile) on
+# http://localhost:8000, against this database and with the settings in .env.
 services:
   db:
     image: postgres:17
@@ -15,6 +18,27 @@ services:
       test: ["CMD-SHELL", "pg_isready -U stoke"]
       interval: 2s
       retries: 15
+
+  app:
+    profiles: [app]
+    build:
+      context: .
+      args:
+        VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-}
+        VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
+        VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://stoke:stoke@db:5432/stoke
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ORIGIN: http://localhost:8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Migrate first, as Render's pre-deploy command does, then start the image's own command.
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
 
 volumes:
   stoke-pg:

@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.customer_id_secret
+.stoke_encryption_key
+.git
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/.pytest_cache
+.DS_Store

@@ -42,11 +42,17 @@ For local development, `DEV_MODE=true` with `STRIPE_PLATFORM_KEY` adds your own 
 ## Setup
 
 ### Configuration
-Backend settings live in a single `.env` file at the repo root (see `.env.example`):
+All settings, backend and frontend, live in a single `.env` file at the repo root (see `.env.example`). Production uses the same names as environment variables.
 ```sh
 cp .env.example .env   # each setting is explained in the file
 ```
-The API and the scripts load this file with python-dotenv, whatever directory you run them from, so you don't need to `export` or `source` anything. Real environment variables take precedence over values in the file. The frontend's Auth0 settings go in `frontend/.env.local` (see `frontend/.env.example`).
+Two secrets are required. Generate each with `python3 -c "import secrets; print(secrets.token_hex(32))"` and keep a copy somewhere safe:
+- `STOKE_ENCRYPTION_KEY` encrypts stored Stripe keys. If it's lost, every user has to add their keys again.
+- `CUSTOMER_ID_SECRET` keys the customer ids in profile URLs. If it changes, every customer link changes.
+
+The API won't start without them. *Upgrading from an older checkout:* those versions generated `.stoke_encryption_key` and `.customer_id_secret` files at the repo root. Copy each file's contents into `.env` as the setting above, so stored keys and links keep working, then delete the files.
+
+The API and the scripts load `.env` with python-dotenv, whatever directory you run them from, so you don't need to `export` or `source` anything. Real environment variables take precedence over values in the file. Vite reads the same file, and only the `VITE_` lines reach the browser.
 
 ### Auth0
 1. Create an **API** (Applications → APIs). Its identifier is the audience: put it in `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE`. Keep RS256 signing. Turn on **Allow Offline Access**, so the app can use refresh tokens.
@@ -152,6 +158,29 @@ cd backend && uv run pytest
 ```
 Set `TEST_DATABASE_URL` to use a different Postgres server. The tests include `tests/test_response_shape.py`, which fails if card details, addresses, phone numbers, metadata, receipt URLs or Stripe ids ever appear in an API response. `tests/test_credentials.py` likewise fails if a stored key ever appears in a response.
 
+### Run the production image locally
+The image Render deploys can also run on your Mac, against the Postgres in Docker and with the settings in `.env`:
+```sh
+docker compose --profile app up --build   # http://localhost:8000
+```
+It runs the migrations first, as Render does, then serves the built frontend and the API from one origin. To sign in there, add `http://localhost:8000` to the Auth0 application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins. For day-to-day work, use the Backend and Frontend steps above, which reload as you edit. Plain `docker compose up -d` still starts only Postgres.
+
+## Deploying to Render
+Stoke deploys to [Render](https://render.com) as one web service (the `Dockerfile`: the built frontend, served by the API) and a Render Postgres database. Both are defined in `render.yaml`.
+
+1. Push the repo to GitHub. In Render, choose **New → Blueprint** and pick the repo.
+2. Render asks for the settings marked `sync: false`:
+   - `STOKE_ENCRYPTION_KEY` and `CUSTOMER_ID_SECRET`: **new** values, not your local ones. Generate them as under Configuration, and save them in a password manager.
+   - `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and the three `VITE_AUTH0_*` values: the same as in your `.env`.
+3. Once the service exists, check its address. If it isn't `stoke.onrender.com`, update `ALLOWED_HOSTS` and `CORS_ORIGIN` in the service's Environment settings (and in `render.yaml`).
+4. In Auth0, add `https://<service>.onrender.com` to the application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins.
+
+Each deploy runs `alembic upgrade head` before the new version starts, and Render checks `/api/healthz` before switching traffic to it. The `VITE_` values are built into the frontend, so changing them needs a new deploy, not just a restart.
+
+Plans: the database uses a paid plan, since free Render databases expire after 30 days. The service uses the starter plan, since free services sleep when idle and can't run the pre-deploy migration. The service runs one process, because the 5-minute Stripe cache is kept in memory.
+
+**Custom domain (later).** Buy one from a registrar such as Cloudflare or Namecheap. In Render, add it under the service's Custom Domains and create the DNS record Render shows you; Render issues the certificate. Then add the domain to `ALLOWED_HOSTS`, `CORS_ORIGIN` and the Auth0 URLs.
+
 ## Security notes
 - **Sign-in is through Auth0.** Every API route needs an Auth0 access token, checked against the tenant's signing keys. The checks cover signature (RS256 only), issuer, audience and expiry. Users are created on first sign-in. A user's keys, settings and customer data are only reachable with that user's token, and another user's key id returns 404. Tokens are sent as a bearer header, not a cookie, so there's no CSRF. Requests whose `Host` isn't in `ALLOWED_HOSTS` are refused, which blocks DNS rebinding. Every response is `Cache-Control: no-store`.
 - **Stripe keys are encrypted at rest** with envelope encryption (`backend/app/crypto.py`):
@@ -159,9 +188,9 @@ Set `TEST_DATABASE_URL` to use a different Postgres server. The tests include `t
   - Both layers are bound to the key's owner and record, so ciphertext copied onto another row or user won't decrypt.
   - Keys are never returned by the API, only their last four characters. The 422 error for a malformed request doesn't echo its input.
   - Decrypted keys exist only in the backend's memory while it reads from Stripe.
-  - **Master key, locally:** `STOKE_ENCRYPTION_KEY`, or else a key generated on first run into `.stoke_encryption_key` at the repo root (gitignored). **Back it up** alongside `.customer_id_secret`: if it's lost, stored keys can't be read, and every user has to add their keys again.
+  - **Master key with `KEY_CIPHER=local`:** `STOKE_ENCRYPTION_KEY`, from `.env` locally or from Render's environment in production. **Back it up** alongside `CUSTOMER_ID_SECRET`: if it's lost, stored keys can't be read, and every user has to add their keys again. On Render, the master key sits in the service's environment variables, so anyone with access to the Render service can read it.
   - **Master key, in production:** set `KEY_CIPHER=aws_kms` and `AWS_KMS_KEY_ID`. The master key then never leaves KMS, and every unwrap is permissioned and logged by CloudTrail. Records name the scheme that sealed them, so moving from `local` to KMS means re-encrypting existing keys (or having users re-add them).
-- **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, generated on first run and kept in `.customer_id_secret` at the repo root (gitignored), or `CUSTOMER_ID_SECRET` if set. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing a future Stripe App. Back it up with `.env` and `.stoke_encryption_key`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
+- **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, `CUSTOMER_ID_SECRET`. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing a future Stripe App. Back it up with `STOKE_ENCRYPTION_KEY`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
 - Responses are built only from the Pydantic models in `backend/app/models.py`, and raw Stripe objects are never returned. Stripe errors are logged on the server and returned as a generic 502.
 
 ## Limitations
