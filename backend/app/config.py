@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Host headers the API answers to; anything else is rejected (guards against DNS rebinding).
     allowed_hosts: str = "127.0.0.1,localhost"
     cache_ttl_seconds: int = 300
+    # Signing secret of the Connect webhook endpoint (scripts/register_webhook.py). Unset: no endpoint.
+    stripe_webhook_secret: SecretStr | None = None
+    # Run imports and re-reads of changed objects in the background (app/sync.py). Off in tests.
+    sync_worker: bool = True
     # The built frontend (frontend/dist), served by the API in the production image. Unset in
     # development, where the Vite dev server serves it.
     static_dir: Path | None = None

@@ -75,12 +75,12 @@ class FakeKms:
     def generate_data_key(self, KeyId, KeySpec, EncryptionContext):
         self.calls.append(("generate", EncryptionContext))
         dek = os.urandom(32)
-        wrapped = crypto._seal(self._inner._master, dek, EncryptionContext["aad"].encode())
+        wrapped = crypto.aead_seal(self._inner._master, dek, EncryptionContext["aad"].encode())
         return {"Plaintext": dek, "CiphertextBlob": wrapped}
 
     def decrypt(self, CiphertextBlob, EncryptionContext):
         self.calls.append(("decrypt", EncryptionContext))
-        return {"Plaintext": crypto._open(self._inner._master, CiphertextBlob, EncryptionContext["aad"].encode())}
+        return {"Plaintext": crypto.aead_open(self._inner._master, CiphertextBlob, EncryptionContext["aad"].encode())}
 
 
 async def test_kms_envelope():

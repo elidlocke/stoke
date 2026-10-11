@@ -55,12 +55,12 @@ class KeyCipher(Protocol):
     async def decrypt(self, sealed: Sealed, aad: str) -> str: ...
 
 
-def _seal(key: bytes, plaintext: bytes, aad: bytes) -> bytes:
+def aead_seal(key: bytes, plaintext: bytes, aad: bytes) -> bytes:
     nonce = os.urandom(NONCE_BYTES)
     return nonce + AESGCM(key).encrypt(nonce, plaintext, aad)
 
 
-def _open(key: bytes, blob: bytes, aad: bytes) -> bytes:
+def aead_open(key: bytes, blob: bytes, aad: bytes) -> bytes:
     try:
         return AESGCM(key).decrypt(blob[:NONCE_BYTES], blob[NONCE_BYTES:], aad)
     except Exception as exc:  # InvalidTag, or a malformed blob
@@ -86,15 +86,15 @@ class LocalCipher:
     async def encrypt(self, plaintext: str, aad: str) -> Sealed:
         dek = AESGCM.generate_key(bit_length=256)
         return Sealed(
-            ciphertext=_seal(dek, plaintext.encode(), aad.encode()),
-            wrapped_dek=_seal(self._master, dek, aad.encode()),
+            ciphertext=aead_seal(dek, plaintext.encode(), aad.encode()),
+            wrapped_dek=aead_seal(self._master, dek, aad.encode()),
             cipher=self.name,
         )
 
     async def decrypt(self, sealed: Sealed, aad: str) -> str:
         _check_scheme(sealed, self.name)
-        dek = _open(self._master, sealed.wrapped_dek, aad.encode())
-        return _open(dek, sealed.ciphertext, aad.encode()).decode()
+        dek = aead_open(self._master, sealed.wrapped_dek, aad.encode())
+        return aead_open(dek, sealed.ciphertext, aad.encode()).decode()
 
 
 class KmsCipher:
@@ -113,7 +113,7 @@ class KmsCipher:
             self._kms.generate_data_key, KeyId=self._key_id, KeySpec="AES_256", EncryptionContext={"aad": aad}
         )
         return Sealed(
-            ciphertext=_seal(resp["Plaintext"], plaintext.encode(), aad.encode()),
+            ciphertext=aead_seal(resp["Plaintext"], plaintext.encode(), aad.encode()),
             wrapped_dek=resp["CiphertextBlob"],
             cipher=self.name,
         )
@@ -126,7 +126,7 @@ class KmsCipher:
             )
         except Exception as exc:
             raise DecryptionError("Stored key can't be decrypted") from exc
-        return _open(resp["Plaintext"], sealed.ciphertext, aad.encode()).decode()
+        return aead_open(resp["Plaintext"], sealed.ciphertext, aad.encode()).decode()
 
 
 @lru_cache

@@ -227,6 +227,28 @@ class TrendsResponse(_Out):
     unconverted_count: int
 
 
+# not_started: never read yet; importing: the first import (or a re-import) is running;
+# ready: up to date; failed: an import stopped and needs a retry from Settings
+SyncState = Literal["not_started", "importing", "ready", "failed"]
+
+
+class ObjectSyncOut(_Out):
+    object: Literal["payment_intent", "invoice", "subscription", "customer"]
+    state: Literal["pending", "running", "done", "skipped", "failed"]
+    count: int  # imported so far
+
+
+class AccountSyncOut(_Out):
+    id: str
+    display_name: str
+    state: SyncState
+    objects: list[ObjectSyncOut]
+
+
+class SyncStatusResponse(_Out):
+    accounts: list[AccountSyncOut]
+
+
 # --- Settings -------------------------------------------------------------------------------------
 # A stored key is never returned, only its last four characters.
 
@@ -249,6 +271,7 @@ class CredentialOut(_Out):
     missing_permissions: list[str]
     created_at: int  # unix seconds
     last_verified_at: int  # unix seconds
+    sync_state: SyncState  # importing the account's data into Stoke
 
 
 class CredentialsResponse(_Out):

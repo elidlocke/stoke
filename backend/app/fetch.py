@@ -1,28 +1,23 @@
-"""Live Stripe reads, returning normalized Payments and Subscriptions."""
+"""Normalized Payments and Subscriptions, read from the stored Stripe objects (see app/sync.py)."""
 
-import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-import stripe
 from cachetools import TTLCache
+from sqlalchemy import Text, any_, bindparam, select
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import sync
 from app.aggregate import Payment, Subscription, invoices_by_payment_intent, normalize_payment, normalize_subscription
 from app.config import get_settings
+from app.db import sessionmaker
+from app.db_models import StripeAccount, StripeObject
+from app.projection import unseal
 from app.stripe_client import Account, MissingPermission
 
-PI_EXPAND = [
-    "data.customer",
-    "data.latest_charge.balance_transaction",
-    "data.latest_charge.refunds",
-    # Includes the dispute's balance transactions: exactly what it withdrew, charged and returned.
-    "data.latest_charge.dispute",
-]
-INVOICE_EXPAND = ["data.payments"]
-# The latest invoice supplies the plan name and a copy of the email that survives customer deletion.
-SUBSCRIPTION_EXPAND = ["data.customer", "data.latest_invoice"]
-
 # A payment can be attempted well after its invoice was created (dunning retries), so invoices
-# are fetched from a little before the window to still find the invoice for every payment.
+# are read from a little before the window to still find the invoice for every payment.
 INVOICE_LOOKBACK = 45 * 86400
 
 
@@ -55,47 +50,89 @@ def clear_cache() -> None:
     _subscriptions_cache().clear()
 
 
+def _clear_where(match) -> None:
+    for cache in (_cache(), _subscriptions_cache()):
+        for key in [k for k in cache if match(k)]:
+            cache.pop(key, None)
+
+
 def clear_credential(credential_id: object) -> None:
     """Drop what was read with one stored key, after it's replaced or removed."""
     suffix = f":{credential_id}"
-    for cache in (_cache(), _subscriptions_cache()):
-        for key in [k for k in cache if k.endswith(suffix)]:
-            cache.pop(key, None)
+    _clear_where(lambda k: k.endswith(suffix))
+
+
+def clear_account(account_id: str) -> None:
+    """Drop everything read from an account, after its stored objects change."""
+    _clear_where(lambda k: k == account_id or k.startswith(f"{account_id}:"))
 
 
 def _covers(cached_since: int | None, since: int | None) -> bool:
     return cached_since is None or (since is not None and cached_since <= since)
 
 
-async def _collect(page) -> list[dict]:
-    return [obj.to_dict() async for obj in page.auto_paging_iter()]
+def _require(account: Account, permission: str) -> None:
+    if permission in account.missing_permissions:
+        raise MissingPermission(permission)
 
 
-def _params(expand: list[str], since: int | None) -> dict:
-    params: dict = {"limit": 100, "expand": expand}
+def _can(account: Account, permission: str) -> bool:
+    return permission not in account.missing_permissions
+
+
+async def _load(
+    session: AsyncSession, row: StripeAccount, key: bytes, obj_type: str,
+    *, since: int | None = None, ids: list[str] | None = None,
+) -> list[dict]:
+    """Stored objects of one type, newest first (as Stripe lists them), with their emails decrypted."""
+    q = select(StripeObject.data).where(
+        StripeObject.account_id == row.account_id, StripeObject.livemode == row.livemode,
+        StripeObject.version == row.active_version, StripeObject.object == obj_type,
+    )
     if since is not None:
-        params["created"] = {"gte": since}
-    return params
+        q = q.where(StripeObject.created >= datetime.fromtimestamp(since, UTC))
+    if ids is not None:
+        q = q.where(StripeObject.id == any_(bindparam("ids", ids, type_=ARRAY(Text))))
+    rows = await session.scalars(q.order_by(StripeObject.created.desc(), StripeObject.id.desc()))
+    return [unseal(data, key) for data in rows]
+
+
+async def _with_customers(
+    session: AsyncSession, account: Account, row: StripeAccount, key: bytes, objs: list[dict]
+) -> None:
+    """Put each object's stored customer in place of its customer id, as an expanded read would."""
+    if not _can(account, "Customers"):
+        return
+    ids = sorted({c for o in objs if isinstance(c := o.get("customer"), str)})
+    if not ids:
+        return
+    customers = {c["id"]: c for c in await _load(session, row, key, "customer", ids=ids)}
+    for o in objs:
+        if (c := customers.get(o.get("customer"))) is not None:
+            o["customer"] = c
 
 
 async def payments_since(account: Account, since: int | None, refresh: bool = False) -> list[Payment]:
     """All payments (PaymentIntents, joined to their invoices) on `account` created at or after `since`.
 
-    One window per account is cached; a narrower period is served by filtering a wider
-    cached window rather than calling Stripe again.
+    One window per account is cached; a narrower period is served by filtering a wider cached
+    window. `refresh` first catches the stored objects up with Stripe.
     """
+    _require(account, "PaymentIntents")
+    if refresh:
+        await sync.catch_up(account)
     cache = _cache()
     cached = cache.get(account.cache_key)
     if cached and not refresh and _covers(cached.since, since):
         return [p for p in cached.payments if since is None or p.created >= since]
 
-    client, opts = account.client, account.options
+    row = await sync.ensure_ready(account)
+    key = await sync.account_key(row)
     invoice_since = None if since is None else since - INVOICE_LOOKBACK
-    pi_page, invoice_page = await asyncio.gather(
-        client.v1.payment_intents.list_async(_params(PI_EXPAND, since), opts),
-        client.v1.invoices.list_async(_params(INVOICE_EXPAND, invoice_since), opts),
-    )
-    intents, invoices = await asyncio.gather(_collect(pi_page), _collect(invoice_page))
+    async with sessionmaker()() as session:
+        intents = await _load(session, row, key, "payment_intent", since=since)
+        invoices = await _load(session, row, key, "invoice", since=invoice_since) if _can(account, "Invoices") else []
+        await _with_customers(session, account, row, key, intents)
 
     by_pi = invoices_by_payment_intent(invoices)
     payments = [
@@ -107,16 +144,18 @@ async def payments_since(account: Account, since: int | None, refresh: bool = Fa
 
 async def subscriptions(account: Account, refresh: bool = False) -> list[Subscription]:
     """Every subscription on `account`, in any status, including canceled ones."""
+    _require(account, "Subscriptions")
+    if refresh:
+        await sync.catch_up(account)
     cache = _subscriptions_cache()
     if not refresh and (cached := cache.get(account.cache_key)) is not None:
         return cached
 
-    params = {"limit": 100, "status": "all", "expand": SUBSCRIPTION_EXPAND}
-    try:
-        page = await account.client.v1.subscriptions.list_async(params, account.options)
-        raw = await _collect(page)
-    except stripe.PermissionError as exc:
-        raise MissingPermission("Subscriptions") from exc
+    row = await sync.ensure_ready(account)
+    key = await sync.account_key(row)
+    async with sessionmaker()() as session:
+        raw = await _load(session, row, key, "subscription")
+        await _with_customers(session, account, row, key, raw)
 
     subs = [normalize_subscription(s, account.id) for s in raw]
     cache[account.cache_key] = subs

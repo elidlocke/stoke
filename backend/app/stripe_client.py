@@ -20,9 +20,15 @@ from app.auth import CurrentUser
 from app.config import get_settings
 from app.crypto import get_cipher
 from app.db import sessionmaker
-from app.db_models import StripeCredential, UserSettings
+from app.db_models import StripeCredential, UserSettings, credential_account_id
 
 Access = Literal["platform", "connected", "own_key"]
+
+# Every request, and so every stored object, uses this API version rather than whatever the SDK or
+# the account defaults to. Changing it changes the shape of stored data: run scripts/resync.py after.
+# Kept equal to the installed SDK's version (tests/test_sync.py checks), so upgrading the SDK is a
+# deliberate change too.
+STRIPE_API_VERSION = "2026-08-26.dahlia"
 
 
 class NoCredentials(Exception):
@@ -44,6 +50,10 @@ class Account:
     access: Access
     client: stripe.StripeClient = field(compare=False, repr=False)
     credential_id: str | None = field(default=None, compare=False)  # the stored key, for "own_key"
+    livemode: bool = field(default=False, compare=False)
+    # What the key can't read (see app/credentials.py). Stored objects are shared by everyone with a
+    # key to the account, so each user is only shown the kinds their own key can read.
+    missing_permissions: tuple[str, ...] = field(default=(), compare=False)
 
     @property
     def cache_key(self) -> str:
@@ -64,7 +74,13 @@ class AccountScope:
 
 
 def make_client(api_key: str) -> stripe.StripeClient:
-    return stripe.StripeClient(api_key, max_network_retries=3, http_client=stripe.HTTPXClient())
+    return stripe.StripeClient(
+        api_key, stripe_version=STRIPE_API_VERSION, max_network_retries=3, http_client=stripe.HTTPXClient()
+    )
+
+
+def key_livemode(api_key: str) -> bool:
+    return api_key.startswith(("sk_live_", "rk_live_"))
 
 
 def account_name(obj: dict) -> str:
@@ -75,20 +91,22 @@ def account_name(obj: dict) -> str:
     )
 
 
-def _to_account(obj: dict, access: Access, client: stripe.StripeClient) -> Account:
+def _to_account(obj: dict, access: Access, client: stripe.StripeClient, livemode: bool) -> Account:
     return Account(
         id=obj["id"],
         display_name=account_name(obj),
         settlement_currency=(obj.get("default_currency") or "usd").lower(),
         access=access,
         client=client,
+        livemode=livemode,
     )
 
 
 async def _platform_accounts(api_key: str) -> tuple[Account, list[Account]]:
     settings = get_settings()
     client = make_client(api_key)
-    platform = _to_account((await client.v1.accounts.retrieve_current_async()).to_dict(), "platform", client)
+    livemode = key_livemode(api_key)
+    platform = _to_account((await client.v1.accounts.retrieve_current_async()).to_dict(), "platform", client, livemode)
 
     if settings.account_allowlist:
         objs = await asyncio.gather(
@@ -97,7 +115,7 @@ async def _platform_accounts(api_key: str) -> tuple[Account, list[Account]]:
     else:
         page = await client.v1.accounts.list_async({"limit": 100})
         objs = [a async for a in page.auto_paging_iter()]
-    return platform, [_to_account(o.to_dict(), "connected", client) for o in objs]
+    return platform, [_to_account(o.to_dict(), "connected", client, livemode) for o in objs]
 
 
 _scope_cache: TTLCache[str, AccountScope] = TTLCache(maxsize=1024, ttl=300)
@@ -111,17 +129,19 @@ def clear_scope_cache(user_id: object | None = None) -> None:
         _scope_cache.pop(str(user_id), None)
 
 
-async def _own_key_accounts(creds: list[StripeCredential]) -> list[Account]:
+async def own_key_accounts(creds: list[StripeCredential]) -> list[Account]:
     cipher = get_cipher()
     keys = await asyncio.gather(*(cipher.decrypt(c.sealed, c.aad) for c in creds))
     return [
         Account(
-            id=c.stripe_account_id or f"key-{c.id}",
+            id=credential_account_id(c),
             display_name=c.label or c.display_name,
             settlement_currency=c.settlement_currency,
             access="own_key",
             client=make_client(key),
             credential_id=str(c.id),
+            livemode=c.livemode,
+            missing_permissions=tuple(c.missing_permissions),
         )
         for c, key in zip(creds, keys)
     ]
@@ -150,7 +170,7 @@ async def get_scope(user: CurrentUser, refresh: bool = False) -> AccountScope:
         platform, connected = await _platform_accounts(platform_key)
         accounts = ([platform] if get_settings().include_platform else []) + connected
 
-    own = await _own_key_accounts(creds)
+    own = await own_key_accounts(creds)
     # An account reachable both ways is read once, preferring its own key.
     own_ids = {a.id for a in own}
     accounts = [a for a in accounts if a.id not in own_ids] + own

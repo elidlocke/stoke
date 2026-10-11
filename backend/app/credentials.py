@@ -17,10 +17,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import fetch
+from app import fetch, sync
 from app.auth import CurrentUser
 from app.crypto import get_cipher
-from app.db_models import StripeCredential, credential_aad
+from app.db_models import StripeCredential, credential_aad, credential_account_id
 from app.stripe_client import account_name, clear_scope_cache, make_client
 
 KEY_PATTERN = re.compile(r"^(rk|sk)_(test|live)_[A-Za-z0-9]{10,240}$")
@@ -34,6 +34,8 @@ PERMISSION_CHECKS = {
     "Customers": lambda c: c.v1.customers.list_async({"limit": 1}),
     "Subscriptions": lambda c: c.v1.subscriptions.list_async({"limit": 1}),
     "Balance transactions": lambda c: c.v1.balance_transactions.list_async({"limit": 1}),
+    # To catch up on changes since the last sync (see app/sync.py).
+    "Events": lambda c: c.v1.events.list_async({"limit": 1}),
 }
 
 
@@ -179,6 +181,26 @@ async def add(session: AsyncSession, user: CurrentUser, raw: str, label: str | N
     await _apply_key(cred, raw, p, key_type, livemode)
     session.add(cred)
     await _commit(session, user)
+    await start_sync(cred)
+    return cred
+
+
+async def start_sync(cred: StripeCredential, previous: tuple[str, bool] | None = None) -> None:
+    """Import the key's account, or the parts of it the key can newly read (see app/sync.py).
+
+    `previous` is the account the key read before a change: once a key can name its account, or a
+    test key is replaced by a live one, what was stored under the old one may no longer be needed.
+    """
+    if previous is not None and previous != (credential_account_id(cred), cred.livemode):
+        await sync.forget_if_orphaned(*previous)
+    if cred.status != "invalid":
+        await sync.start_backfill(credential_account_id(cred), cred.livemode, cred.missing_permissions)
+
+
+async def retry_sync(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID) -> StripeCredential:
+    """Start a failed import again."""
+    cred = await get_for_user(session, user, credential_id)
+    await start_sync(cred)
     return cred
 
 
@@ -192,9 +214,11 @@ async def replace_key(session: AsyncSession, user: CurrentUser, credential_id: u
         raise CredentialError(f"This key is for a different Stripe account ({p.display_name}). Add it as a new account instead.")
     await _check_not_duplicate(session, user, p.stripe_account_id, except_id=cred.id)
 
+    previous = (credential_account_id(cred), cred.livemode)
     await _apply_key(cred, raw, p, key_type, livemode)
     await _commit(session, user)
     fetch.clear_credential(cred.id)
+    await start_sync(cred, previous)
     return cred
 
 
@@ -202,6 +226,7 @@ async def reverify(session: AsyncSession, user: CurrentUser, credential_id: uuid
     """Check a stored key again, e.g. after granting it more permissions in Stripe."""
     cred = await get_for_user(session, user, credential_id)
     raw = await get_cipher().decrypt(cred.sealed, credential_aad(user.id, cred.id))
+    previous = (credential_account_id(cred), cred.livemode)
     try:
         p = await probe(raw)
     except InvalidKey:
@@ -213,6 +238,7 @@ async def reverify(session: AsyncSession, user: CurrentUser, credential_id: uuid
     cred.last_verified_at = datetime.now(UTC)
     await _commit(session, user)
     fetch.clear_credential(cred.id)
+    await start_sync(cred, previous)
     return cred
 
 
@@ -225,6 +251,9 @@ async def rename(session: AsyncSession, user: CurrentUser, credential_id: uuid.U
 
 async def delete(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID) -> None:
     cred = await get_for_user(session, user, credential_id)
+    account_id, livemode = credential_account_id(cred), cred.livemode
     await session.delete(cred)
     await _commit(session, user)
     fetch.clear_credential(credential_id)
+    # Stored customer data is kept only while someone has a key to the account.
+    await sync.forget_if_orphaned(account_id, livemode)

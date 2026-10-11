@@ -12,6 +12,7 @@ from app.models import (
     CustomerProfileResponse,
     LeaderboardResponse,
     NewCustomersResponse,
+    SyncStatusResponse,
     TrendsResponse,
     Period,
     Window,
@@ -22,6 +23,12 @@ router = APIRouter(prefix="/api")
 @router.get("/accounts")
 async def get_accounts(user: UserDep) -> AccountsResponse:
     return await service.accounts(user)
+
+
+@router.get("/sync-status")
+async def get_sync_status(user: UserDep) -> SyncStatusResponse:
+    """How far each account's import into Stoke has got."""
+    return await service.sync_status(user)
 
 
 @router.get("/leaderboard")

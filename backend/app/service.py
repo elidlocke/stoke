@@ -2,11 +2,12 @@ import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from app import aggregate, fetch, fx
+from app import aggregate, fetch, fx, sync
 from app.aggregate import Payment, Subscription
 from app.models import (
     AccountOut,
     AccountsResponse,
+    AccountSyncOut,
     AnniversariesResponse,
     AnniversaryEntry,
     AtRiskEntry,
@@ -19,7 +20,9 @@ from app.models import (
     LeaderboardResponse,
     NewCustomerEntry,
     NewCustomersResponse,
+    ObjectSyncOut,
     Period,
+    SyncStatusResponse,
     TimelineEventOut,
     TrendMonthOut,
     TrendsResponse,
@@ -78,6 +81,20 @@ async def accounts(user: CurrentUser) -> AccountsResponse:
             for a in scope.accounts
         ],
     )
+
+
+async def sync_status(user: CurrentUser) -> SyncStatusResponse:
+    scope = await get_scope(user)
+    states = await sync.progress((a.id, a.livemode) for a in scope.accounts)
+    return SyncStatusResponse(accounts=[
+        AccountSyncOut(
+            id=a.id,
+            display_name=a.display_name,
+            state=(s := states[(a.id, a.livemode)]).state,
+            objects=[ObjectSyncOut(object=o.object, state=o.state, count=o.count) for o in s.objects],
+        )
+        for a in scope.accounts
+    ])
 
 
 async def leaderboard(

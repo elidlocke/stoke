@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,11 +11,11 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import credentials, customer_id, db, service
+from app import credentials, customer_id, db, service, sync
 from app.auth import Unauthenticated
 from app.config import get_settings
 from app.crypto import DecryptionError, get_cipher
-from app.routers import customers, settings
+from app.routers import customers, settings, webhooks
 from app.stripe_client import MissingPermission, NoCredentials
 
 log = logging.getLogger("stoke")
@@ -24,7 +26,12 @@ async def lifespan(_: FastAPI):
     # Fail at startup, not on the first request, if a required secret is missing.
     get_cipher()
     customer_id.customer_id("startup-check")
+    worker = asyncio.create_task(sync.run_worker()) if get_settings().sync_worker else None
     yield
+    if worker is not None:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
     await db.dispose()
 
 
@@ -52,6 +59,7 @@ class HostCheck(TrustedHostMiddleware):
 app.add_middleware(HostCheck, allowed_hosts=get_settings().allowed_host_list)
 app.include_router(customers.router)
 app.include_router(settings.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/api/healthz", include_in_schema=False)
@@ -111,6 +119,12 @@ async def stripe_error(_: Request, exc: stripe.StripeError) -> JSONResponse:
 async def no_credentials(_: Request, exc: NoCredentials) -> JSONResponse:
     # The code tells the frontend to send the user to Settings.
     return JSONResponse({"detail": str(exc), "code": "no_credentials"}, status_code=503)
+
+
+@app.exception_handler(sync.Importing)
+async def importing(_: Request, exc: sync.Importing) -> JSONResponse:
+    # The code tells the frontend to show the import's progress (GET /api/sync-status).
+    return JSONResponse({"detail": "Importing your Stripe history.", "code": "importing"}, status_code=503)
 
 
 @app.exception_handler(MissingPermission)

@@ -13,6 +13,7 @@ os.environ["AUTH0_DOMAIN"] = "stoke-test.auth0.local"
 os.environ["AUTH0_AUDIENCE"] = "https://api.stoke.test"
 os.environ["ALLOWED_HOSTS"] = "testserver"
 os.environ.pop("DEV_MODE", None)
+os.environ["SYNC_WORKER"] = "false"
 # A Postgres server for the tests that need one (docker compose up -d); they use their own database.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://stoke:stoke@127.0.0.1:5432/stoke_test"
@@ -27,7 +28,7 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 
 from app import db as app_db  # noqa: E402
-from app import fetch  # noqa: E402
+from app import fetch, sync  # noqa: E402
 from app.auth import CurrentUser, clear_jwks_cache  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.crypto import get_cipher  # noqa: E402
@@ -207,6 +208,9 @@ def make_canceled_subscription(**overrides) -> dict:
 
 def _clear():
     fetch.clear_cache()
+    sync._accounts.clear()
+    sync._data_keys.clear()
+    sync._platform_ids.clear()
     clear_scope_cache()
     get_settings.cache_clear()
     get_cipher.cache_clear()
@@ -254,7 +258,10 @@ async def db(_migrated_database):
     app_db.configure(TEST_DATABASE_URL, null_pool=True)
     yield app_db.sessionmaker()
     async with app_db.sessionmaker()() as session:
-        await session.execute(text("TRUNCATE users, user_settings, stripe_credentials CASCADE"))
+        await session.execute(text(
+            "TRUNCATE users, user_settings, stripe_credentials,"
+            " stripe_accounts, stripe_objects, stripe_sync_queue, stripe_backfills CASCADE"
+        ))
         await session.commit()
     await app_db.dispose()
 
@@ -279,6 +286,7 @@ RESOURCES = {
     "Customers": "customers",
     "Subscriptions": "subscriptions",
     "Balance transactions": "balance_transactions",
+    "Events": "events",
 }
 
 
