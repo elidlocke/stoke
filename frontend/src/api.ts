@@ -221,6 +221,43 @@ export interface TrendsResponse {
   unconverted_count: number // payments excluded from take-home for lack of an FX rate
 }
 
+// --- Actions ----------------------------------------------------------------------------------
+
+export type ActionType = 'gratitude' | 'upgrade' | 'cross_sell' | 'win_back' | 'retention'
+
+export interface Action {
+  kind: string // e.g. welcome; one per revenue source: cross-sell-<link id>, repeat-booking-<link id>
+  type: ActionType
+  title: string
+  rule: string // who's in the audience, with its thresholds
+  ask: string // what the note asks for
+  link_id: string | null // cross-sell: the revenue source it points at
+  unavailable: string | null // why the audience can't be worked out yet; it's then empty
+  audience_size: number
+}
+
+export interface ActionsResponse {
+  reporting_currency: string
+  actions: Action[] // in library order
+}
+
+export interface AudienceEntry {
+  email: string
+  customer_id: string // opaque id for the profile URL; never the email or a Stripe id
+  account_id: string
+  why: string // why this person
+  plan: string | null
+  lifetime_value: number // take-home across all time
+  date: number // the event behind it: subscribing, an anniversary, canceling, ...
+  deadline: number | null // retention: next retry, when access ends, or the evidence deadline
+}
+
+export interface ActionAudienceResponse {
+  reporting_currency: string
+  action: Action
+  customers: AudienceEntry[] // highest value first; retention: most urgent first
+}
+
 // not_started: never read yet; importing: the first import (or a re-import) is running;
 // ready: up to date; failed: an import stopped and needs a retry from Settings
 export type SyncState = 'not_started' | 'importing' | 'ready' | 'failed'
@@ -273,6 +310,41 @@ export interface WriterLink {
 }
 
 export type WriterLinkIn = Omit<WriterLink, 'id' | 'created_at'>
+
+export type PlanLabel = 'standard' | 'founding'
+
+/** One of the writer's subscription prices. */
+export interface Plan {
+  id: string // opaque; never Stripe's price id
+  account_id: string
+  name: string | null // as invoices show it, e.g. "Founding member · yearly"
+  amount: number | null // per interval, in `currency`
+  currency: string | null
+  interval: string | null // day, week, month or year
+  interval_count: number | null
+  subscribers: number // current subscriptions on it
+  label: PlanLabel | null // confirmed; null: not yet
+  suggested: PlanLabel // Stoke's guess, used until it's confirmed
+}
+
+export interface PlansResponse {
+  plans: Plan[] // most subscribers first
+  unpriced: number // current subscriptions read before Stoke kept prices
+}
+
+/** A platform (a Stripe Connect application) that takes payments into the writer's accounts. */
+export interface PaymentSource {
+  id: string // opaque
+  account_ids: string[]
+  platform: string | null // from its fee's label, e.g. "Substack"
+  payments: number
+  customers: number
+  last_paid: number
+  example: string | null // what the latest payment was for
+  // A revenue source's link id, 'newsletter' or 'other'. label: confirmed; suggested: Stoke's guess.
+  label: string | null
+  suggested: string | null
+}
 
 // --- Requests ---------------------------------------------------------------------------------
 
@@ -339,6 +411,13 @@ export const api = {
   newCustomers: (window: Window, account?: string, refresh = false) =>
     get<NewCustomersResponse>('/api/new-customers', { window, account, refresh: refresh ? 'true' : undefined }),
   trends: () => get<TrendsResponse>('/api/trends'),
+  actions: (account?: string, refresh = false) =>
+    get<ActionsResponse>('/api/actions', { account, refresh: refresh ? 'true' : undefined }),
+  action: (kind: string, account?: string, refresh = false) =>
+    get<ActionAudienceResponse>(`/api/actions/${encodeURIComponent(kind)}`, {
+      account,
+      refresh: refresh ? 'true' : undefined,
+    }),
   syncStatus: () => get<SyncStatus>('/api/sync-status'),
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
@@ -356,4 +435,9 @@ export const api = {
   addLink: (link: WriterLinkIn) => request<WriterLink>('POST', '/api/links', { body: link }),
   updateLink: (id: string, link: WriterLinkIn) => request<WriterLink>('PUT', `/api/links/${id}`, { body: link }),
   deleteLink: (id: string) => request<void>('DELETE', `/api/links/${id}`),
+  plans: () => get<PlansResponse>('/api/plans'),
+  labelPlan: (id: string, label: PlanLabel | null) => request<void>('PUT', `/api/plans/${id}`, { body: { label } }),
+  paymentSources: () => get<{ sources: PaymentSource[] }>('/api/payment-sources'),
+  labelPaymentSource: (id: string, label: string | null) =>
+    request<void>('PUT', `/api/payment-sources/${id}`, { body: { label } }),
 }

@@ -391,3 +391,53 @@ class LinkIn(_In):
         elif self.paid_via_account_id is not None or self.purchase is not None:
             raise ValueError("Only revenue sources are paid for")
         return self
+
+
+# --- The writer's profile: plan labels and where payments come from -------------------------------
+# Prices and Connect applications are referred to by opaque ids (app/customer_id.py: ref_id), never Stripe's.
+
+PlanLabel = Literal["standard", "founding"]
+
+
+class PlanOut(_Out):
+    id: str  # opaque
+    account_id: str
+    name: str | None  # as invoices show it, e.g. "Founding member · yearly"
+    amount: int | None  # per interval, minor units of `currency`
+    currency: str | None
+    interval: str | None  # day, week, month or year
+    interval_count: int | None
+    subscribers: int  # current subscriptions on it
+    label: PlanLabel | None  # confirmed by the writer; None: not yet
+    suggested: PlanLabel  # Stoke's guess, used until it's confirmed
+
+
+class PlansResponse(_Out):
+    plans: list[PlanOut]  # most subscribers first
+    # Current subscriptions read before Stoke kept prices: their plans appear once they're read again.
+    unpriced: int
+
+
+class PlanLabelIn(_In):
+    label: PlanLabel | None  # None: back to Stoke's guess
+
+
+class PaymentSourceOut(_Out):
+    id: str  # opaque: the Connect application that created the payments
+    account_ids: list[str]
+    platform: str | None  # from its fee's label, e.g. "Substack"
+    payments: int
+    customers: int
+    last_paid: int  # unix seconds
+    example: str | None  # what the latest payment was for
+    # A revenue source's link id, "newsletter", or "other". label: confirmed; suggested: Stoke's guess.
+    label: str | None
+    suggested: str | None
+
+
+class PaymentSourcesResponse(_Out):
+    sources: list[PaymentSourceOut]  # most payments first
+
+
+class PaymentSourceLabelIn(_In):
+    label: str | None = Field(None, max_length=64)  # a revenue source's link id, "newsletter", "other", or None

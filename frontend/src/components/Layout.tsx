@@ -7,7 +7,8 @@ import { ImportProgress } from './ImportProgress'
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
-  { to: '/analytics', label: 'Analytics' },
+  { to: '/actions', label: 'Actions' },
+  { to: '/analytics/top', label: 'Top customers' },
   { to: '/settings', label: 'Settings' },
 ]
 

@@ -220,3 +220,44 @@ def test_subscription_price_is_normalized():
     assert (s.price_id, s.price_amount, s.price_currency, s.interval, s.interval_count) == ("price_9", 15000, "usd", "year", 1)
     old = normalize_subscription(make_subscription(), "acct_a")
     assert (old.price_amount, old.interval) == (None, None)
+
+
+# ---- What the writer confirmed in Settings ----
+
+def test_plan_labels_override_the_founding_guess():
+    payments, loyal = monthly_subscriber("loyal@x.com", 4, price_id="p_monthly")
+    named = sub("named@x.com", 400, plan="Founding member · yearly", interval="year", price_id="p_named")
+    patron = sub("patron@x.com", 400, plan="Patron", interval="year", price_id="p_patron")
+    subs = [loyal, named, patron]
+    assert emails(run(payments, subs)["vip"]) == ["loyal@x.com", "named@x.com"]  # the guess: by name
+
+    labels = actions.Labels(plans={"p_named": "standard", "p_patron": "founding"})
+    found = run(payments, subs, labels=labels)
+    assert [c.email for c in found["vip"].candidates if c.why.startswith("Founding")] == ["patron@x.com"]
+    assert emails(found["founding-upgrade"]) == ["loyal@x.com"]
+
+    none = run(payments, [loyal, named], labels=actions.Labels(plans={"p_named": "standard"}))["founding-upgrade"]
+    assert none.unavailable
+
+
+def test_confirmed_applications_find_a_sources_buyers_on_any_account():
+    big_p, big = monthly_subscriber("big@x.com", 6, take_home=5000)
+    buyer_p, buyer = monthly_subscriber("buyer@x.com", 6, take_home=3000)
+    buyer_p.append(pay("buyer@x.com", 300, "manual", account="acct_a", application="ca_maven"))
+    other_p = [pay("big@x.com", 300, "manual", account="acct_a", application="ca_gumroad")]
+    course = RevenueSource("course", "maven", "Course", "repeat", None)
+    labels = actions.Labels(applications={"ca_maven": "course"})
+
+    found = run(big_p + buyer_p + other_p, [big, buyer], [course], labels=labels)
+    assert emails(found["cross-sell-course"]) == ["big@x.com"]  # the Maven buyer is left out
+    # Not paid through a connected account, but its payments are known: it can be booked again.
+    assert emails(found["repeat-booking-course"]) == ["buyer@x.com"]
+    assert "repeat-booking-course" not in run(big_p + buyer_p, [big, buyer], [course])
+
+
+def test_newsletter_payments_are_not_revenue_source_sales():
+    gift = [pay("gifter@x.com", 300, "manual", account="acct_b", application="ca_substack")]
+    call = RevenueSource("call", "calendly", "Call", "repeat", "acct_b")
+    assert emails(run(gift, [], [call])["repeat-booking-call"]) == ["gifter@x.com"]
+    labels = actions.Labels(applications={"ca_substack": actions.NEWSLETTER})
+    assert emails(run(gift, [], [call], labels=labels)["repeat-booking-call"]) == []

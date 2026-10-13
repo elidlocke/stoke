@@ -89,6 +89,8 @@ class Payment:
     settled_net: int | None  # minus refunds, before fees
     settled_fees: tuple[Fee, ...] = ()  # deducted when the payment was made; not returned on refund
     dispute: Dispute | None = None
+    # The Connect application that created the payment (e.g. Substack's, or a course platform's); None: made directly.
+    application: str | None = None
     # In the reporting currency. None until converted, or if no FX rate was available.
     gross_reporting: int | None = None
     net_reporting: int | None = None
@@ -269,7 +271,15 @@ def normalize_payment(pi: dict, invoice: dict | None, account_id: str) -> Paymen
         settled_net=settled[2],
         settled_fees=settled[3],
         dispute=_dispute(charge) if collected else None,
+        application=_id(pi.get("application")) or _id(charge.get("application")),
     )
+
+
+def _id(ref: object) -> str | None:
+    """An expandable reference's id, whether or not it was expanded."""
+    if isinstance(ref, dict):
+        ref = ref.get("id")
+    return ref if isinstance(ref, str) and ref else None
 
 
 def _dispute(charge: dict) -> Dispute | None:

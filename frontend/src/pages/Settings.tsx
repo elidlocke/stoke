@@ -4,6 +4,7 @@ import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
 import { WriterLinks } from './SettingsLinks'
+import { WriterProfile } from './SettingsProfile'
 
 const PERMISSIONS = [
   'PaymentIntents',
@@ -24,6 +25,7 @@ export function Settings() {
       </header>
       <StripeAccounts />
       <WriterLinks />
+      <WriterProfile />
     </>
   )
 }

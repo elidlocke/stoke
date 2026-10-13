@@ -177,3 +177,17 @@ class WriterLink(Base):
     position: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WriterProfile(Base):
+    """What the writer has told Stoke about their business, beyond their links. One per user."""
+
+    __tablename__ = "writer_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    # Stripe price id -> standard | founding. Unlabelled prices are guessed (see app/actions.py).
+    plan_labels: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
+    # Connect application id -> what its payments are: a revenue source (a WriterLink id), "newsletter", or "other".
+    application_labels: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

@@ -3,7 +3,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 
 from app import actions as library
-from app import aggregate, fetch, fx, sync
+from app import aggregate, fetch, fx, profile, sync
 from app.aggregate import Payment, Subscription
 from app.models import (
     AccountOut,
@@ -26,6 +26,10 @@ from app.models import (
     NewCustomerEntry,
     NewCustomersResponse,
     ObjectSyncOut,
+    PaymentSourceOut,
+    PaymentSourcesResponse,
+    PlanOut,
+    PlansResponse,
     Period,
     SyncStatusResponse,
     TimelineEventOut,
@@ -34,7 +38,7 @@ from app.models import (
     Window,
 )
 from app.auth import CurrentUser
-from app.customer_id import customer_id, resolve
+from app.customer_id import customer_id, ref_id, resolve
 from app.stripe_client import Account, AccountScope, MissingPermission, get_scope
 
 
@@ -48,6 +52,10 @@ class UnknownCustomer(Exception):
 
 class UnknownAction(Exception):
     pass
+
+
+class UnknownRef(Exception):
+    """An opaque plan or payment-source id that matches none of the user's."""
 
 
 async def _to_reporting(payments: list[Payment], reporting_currency: str) -> list[Payment]:
@@ -304,7 +312,8 @@ async def trends(user: CurrentUser, refresh: bool) -> TrendsResponse:
 
 
 async def _audiences(
-    user: CurrentUser, sources: list[library.RevenueSource], account_id: str | None, refresh: bool, only: str | None = None
+    user: CurrentUser, sources: list[library.RevenueSource], labels: library.Labels, account_id: str | None,
+    refresh: bool, only: str | None = None,
 ) -> tuple[str, list[library.Audience]]:
     scope = await get_scope(user, refresh=refresh)
     accts = _select(scope, account_id)
@@ -314,7 +323,7 @@ async def _audiences(
     except MissingPermission:
         subs, subscriptions_available = [], False
     now = int(datetime.now(UTC).timestamp())
-    found = library.audiences(payments, subs, sources, now, subscriptions_available, only)
+    found = library.audiences(payments, subs, sources, now, subscriptions_available, only, labels)
     return scope.reporting_currency, found
 
 
@@ -327,16 +336,17 @@ def _action_out(a: library.Audience) -> ActionOut:
 
 
 async def actions(
-    user: CurrentUser, sources: list[library.RevenueSource], account_id: str | None, refresh: bool
+    user: CurrentUser, sources: list[library.RevenueSource], labels: library.Labels, account_id: str | None, refresh: bool
 ) -> ActionsResponse:
-    currency, found = await _audiences(user, sources, account_id, refresh)
+    currency, found = await _audiences(user, sources, labels, account_id, refresh)
     return ActionsResponse(reporting_currency=currency, actions=[_action_out(a) for a in found])
 
 
 async def action(
-    user: CurrentUser, sources: list[library.RevenueSource], kind: str, account_id: str | None, refresh: bool
+    user: CurrentUser, sources: list[library.RevenueSource], labels: library.Labels, kind: str,
+    account_id: str | None, refresh: bool,
 ) -> ActionAudienceResponse:
-    currency, found = await _audiences(user, sources, account_id, refresh, only=kind)
+    currency, found = await _audiences(user, sources, labels, account_id, refresh, only=kind)
     if not found:
         raise UnknownAction(kind)
     [a] = found
@@ -351,3 +361,57 @@ async def action(
             for c in a.candidates
         ],
     )
+
+
+async def _all_subscriptions(user: CurrentUser) -> list[Subscription]:
+    return await _subscriptions_if_permitted((await get_scope(user)).accounts)
+
+
+async def plans(user: CurrentUser, labels: library.Labels) -> PlansResponse:
+    subs = await _all_subscriptions(user)
+    return PlansResponse(
+        plans=[
+            PlanOut(
+                id=ref_id("price", p.price_id), account_id=p.account_id, name=p.name, amount=p.amount, currency=p.currency,
+                interval=p.interval, interval_count=p.interval_count, subscribers=p.subscribers,
+                label=p.label, suggested=p.suggested,
+            )
+            for p in profile.plans(subs, labels)
+        ],
+        unpriced=sum(1 for s in subs if s.current and s.price_id is None),
+    )
+
+
+async def price_id(user: CurrentUser, ref: str) -> str:
+    """The Stripe price behind an opaque plan id."""
+    for s in await _all_subscriptions(user):
+        if s.price_id and ref_id("price", s.price_id) == ref:
+            return s.price_id
+    raise UnknownRef(ref)
+
+
+async def _all_payments(user: CurrentUser) -> list[Payment]:
+    scope = await get_scope(user)
+    per_account = await asyncio.gather(*(fetch.payments_since(a, None) for a in scope.accounts))
+    return [p for ps in per_account for p in ps]
+
+
+async def payment_sources(
+    user: CurrentUser, sources: list[library.RevenueSource], labels: library.Labels
+) -> PaymentSourcesResponse:
+    return PaymentSourcesResponse(sources=[
+        PaymentSourceOut(
+            id=ref_id("application", s.application), account_ids=s.account_ids, platform=s.platform,
+            payments=s.payments, customers=s.customers, last_paid=s.last_paid, example=s.example,
+            label=s.label, suggested=s.suggested,
+        )
+        for s in profile.payment_sources(await _all_payments(user), sources, labels)
+    ])
+
+
+async def application_id(user: CurrentUser, ref: str) -> str:
+    """The Connect application behind an opaque payment-source id."""
+    for app in {p.application for p in await _all_payments(user) if p.application}:
+        if ref_id("application", app) == ref:
+            return app
+    raise UnknownRef(ref)

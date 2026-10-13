@@ -37,3 +37,9 @@ def resolve(cid: str, emails: Iterable[str | None]) -> str | None:
         if email and hmac.compare_digest(hmac.new(key, email.encode(), hashlib.sha256).hexdigest()[:ID_LENGTH], cid):
             return email
     return None
+
+
+def ref_id(namespace: str, value: str) -> str:
+    """An opaque id for another Stripe id (a price, a Connect application), so responses never carry
+    Stripe ids. `namespace` keeps it from ever equalling a customer id."""
+    return hmac.new(_key(), f"{namespace}:{value}".encode(), hashlib.sha256).hexdigest()[:ID_LENGTH]

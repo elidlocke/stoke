@@ -4,9 +4,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { ApiError } from './api'
 import { AuthGate } from './components/AuthGate'
 import { Layout } from './components/Layout'
-import { ANALYTICS_TABS } from './analyticsTabs'
-import { Analytics, MovedToAnalytics } from './pages/Analytics'
+import { Action } from './pages/Action'
+import { Actions } from './pages/Actions'
+import { MOVED_PATHS, MovedToAction, MovedToAnalytics } from './pages/Analytics'
 import { CustomerProfile } from './pages/CustomerProfile'
+import { Leaderboard } from './pages/Leaderboard'
 import { Overview } from './pages/Overview'
 import { Settings } from './pages/Settings'
 
@@ -43,18 +45,18 @@ export default function App() {
             <Routes>
               <Route element={<Layout />}>
                 <Route path="/" element={<Overview />} />
-                <Route path="/analytics" element={<Analytics />}>
-                  <Route index element={<Navigate to={ANALYTICS_TABS[0].path} replace />} />
-                  {ANALYTICS_TABS.map((t) => (
-                    <Route key={t.path} path={t.path} element={t.element} />
-                  ))}
-                </Route>
+                <Route path="/actions" element={<Actions />} />
+                <Route path="/actions/:kind" element={<Action />} />
+                <Route path="/analytics" element={<Navigate to="/analytics/top" replace />} />
+                <Route path="/analytics/top" element={<Leaderboard />} />
                 <Route path="/customers/:customerId" element={<CustomerProfile />} />
                 <Route path="/settings" element={<Settings />} />
-                {/* The views' addresses before they moved under Analytics, so old links still work. */}
-                {ANALYTICS_TABS.map((t) => (
-                  <Route key={t.path} path={`/${t.path}`} element={<MovedToAnalytics path={t.path} />} />
-                ))}
+                {/* Old addresses, so links still work: the lists that became actions, and the views before Analytics. */}
+                <Route path="/top" element={<MovedToAnalytics />} />
+                {MOVED_PATHS.flatMap((p) => [
+                  <Route key={`a-${p}`} path={`/analytics/${p}`} element={<MovedToAction path={p} />} />,
+                  <Route key={p} path={`/${p}`} element={<MovedToAction path={p} />} />,
+                ])}
               </Route>
             </Routes>
           </BrowserRouter>

@@ -126,33 +126,6 @@ main {
   }
 }
 
-/* ---- Analytics tabs ---- */
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--border);
-  margin: -12px 0 24px;
-}
-.tabs a {
-  padding: 8px 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.tabs a:hover {
-  color: var(--text);
-  text-decoration: none;
-}
-.tabs a.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-
 /* ---- Overview cards ---- */
 
 .cards {
@@ -889,4 +862,41 @@ td.link-url {
   margin: 16px 0 0;
   display: grid;
   gap: 12px;
+}
+
+/* ---- Actions ---- */
+
+.action-cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.action-card {
+  display: block;
+  color: var(--text);
+  text-decoration: none;
+}
+.action-card:hover {
+  border-color: var(--accent);
+}
+.action-card h3,
+.action-cards .card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.action-card .card-stat {
+  margin: 0;
+}
+.action-card p {
+  margin: 0;
+}
+.action-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 20px;
+}
+.action-facts dt {
+  color: var(--muted);
+}
+.action-facts dd {
+  margin: 0;
 }

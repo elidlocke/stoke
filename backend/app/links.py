@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import credentials
+from app.actions import RevenueSource
 from app.auth import CurrentUser
 from app.db_models import WriterLink, credential_account_id
 from app.models import LinkIn
@@ -25,6 +26,18 @@ async def list_for_user(session: AsyncSession, user: CurrentUser) -> list[Writer
     return list(await session.scalars(
         select(WriterLink).where(WriterLink.user_id == user.id).order_by(WriterLink.position, WriterLink.created_at)
     ))
+
+
+async def revenue_sources(session: AsyncSession, user: CurrentUser) -> list[RevenueSource]:
+    """The writer's revenue sources, as the actions read them."""
+    return [
+        RevenueSource(
+            id=str(link.id), kind=link.kind, name=link.name or link.kind, purchase=link.purchase or "once",
+            paid_via_account_id=link.paid_via_account_id,
+        )
+        for link in await list_for_user(session, user)
+        if link.category == "revenue_source"
+    ]
 
 
 async def get_for_user(session: AsyncSession, user: CurrentUser, link_id: uuid.UUID) -> WriterLink:

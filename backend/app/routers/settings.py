@@ -1,10 +1,10 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, links, sync
+from app import credentials, links, profile, service, sync
 from app.auth import UserDep
 from app.db import get_session
 from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
@@ -16,6 +16,10 @@ from app.models import (
     LinkOut,
     LinksResponse,
     MeResponse,
+    PaymentSourceLabelIn,
+    PaymentSourcesResponse,
+    PlanLabelIn,
+    PlansResponse,
     RenameCredentialRequest,
     ReplaceKeyRequest,
     UserSettingsIn,
@@ -161,4 +165,41 @@ async def update_link(link_id: uuid.UUID, body: LinkIn, user: UserDep, session: 
 @router.delete("/links/{link_id}", status_code=204)
 async def delete_link(link_id: uuid.UUID, user: UserDep, session: SessionDep) -> Response:
     await links.delete(session, user, link_id)
+    return Response(status_code=204)
+
+
+RefPath = Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")]
+
+
+@router.get("/plans")
+async def list_plans(user: UserDep, session: SessionDep) -> PlansResponse:
+    """The writer's subscription plans, each labelled standard or Founding (confirmed, or Stoke's guess)."""
+    return await service.plans(user, await profile.labels(session, user))
+
+
+@router.put("/plans/{plan_id}", status_code=204)
+async def label_plan(plan_id: RefPath, body: PlanLabelIn, user: UserDep, session: SessionDep) -> Response:
+    try:
+        price = await service.price_id(user, plan_id)
+    except service.UnknownRef:
+        raise HTTPException(404, "Not found")
+    await profile.set_plan_label(session, user, price, body.label)
+    return Response(status_code=204)
+
+
+@router.get("/payment-sources")
+async def list_payment_sources(user: UserDep, session: SessionDep) -> PaymentSourcesResponse:
+    """The platforms that take payments into the writer's accounts, and what each one sells."""
+    return await service.payment_sources(user, await links.revenue_sources(session, user), await profile.labels(session, user))
+
+
+@router.put("/payment-sources/{source_id}", status_code=204)
+async def label_payment_source(
+    source_id: RefPath, body: PaymentSourceLabelIn, user: UserDep, session: SessionDep
+) -> Response:
+    try:
+        app_id = await service.application_id(user, source_id)
+    except service.UnknownRef:
+        raise HTTPException(404, "Not found")
+    await profile.set_application_label(session, user, app_id, body.label, await links.revenue_sources(session, user))
     return Response(status_code=204)

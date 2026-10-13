@@ -11,7 +11,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import credentials, customer_id, db, links, service, sync
+from app import credentials, customer_id, db, links, profile, service, sync
 from app.auth import Unauthenticated
 from app.config import get_settings
 from app.crypto import DecryptionError, get_cipher
@@ -105,6 +105,11 @@ async def credential_not_found(_: Request, exc: credentials.CredentialNotFound) 
 
 @app.exception_handler(links.LinkError)
 async def link_error(_: Request, exc: links.LinkError) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
+@app.exception_handler(profile.ProfileError)
+async def profile_error(_: Request, exc: profile.ProfileError) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=400)
 
 

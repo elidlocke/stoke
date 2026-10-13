@@ -3,10 +3,13 @@
 Each action has an audience rule over the same payments and subscriptions as the analytics, and
 every person in an audience carries a "why" a writer can read at a glance. Thresholds are defaults
 for now; actions become adjustable once they're stored (see docs/actions-plan.md).
+
+What the writer has confirmed in Settings (Labels) overrides the guesses: which plans are Founding,
+and which Connect application each revenue source's payments come from.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -64,6 +67,18 @@ _DISPUTE_REASONS = {
 }
 
 
+PlanLabel = Literal["standard", "founding"]
+NEWSLETTER = "newsletter"  # an application's payments are for the newsletter itself (e.g. Substack's)
+OTHER = "other"  # neither the newsletter nor one of the writer's revenue sources
+
+
+@dataclass(frozen=True)
+class Labels:
+    """What the writer confirmed in Settings (a WriterProfile)."""
+    plans: dict[str, str] = field(default_factory=dict)  # price id -> standard | founding
+    applications: dict[str, str] = field(default_factory=dict)  # application id -> link id | newsletter | other
+
+
 @dataclass(frozen=True)
 class RevenueSource:
     """What the rules need of a writer's revenue source (a WriterLink)."""
@@ -72,6 +87,13 @@ class RevenueSource:
     name: str
     purchase: str  # once | repeat | subscription
     paid_via_account_id: str | None  # the connected account it's paid through; None: elsewhere
+    # Connect applications the writer confirmed its payments come from. Then exactly its payments are
+    # known; otherwise every one-off payment on paid_via_account_id is taken to be one.
+    applications: frozenset[str] = frozenset()
+
+    @property
+    def payments_known(self) -> bool:
+        return bool(self.applications) or self.paid_via_account_id is not None
 
 
 @dataclass(frozen=True)
@@ -148,6 +170,7 @@ class Facts:
     payments: list[Payment]
     subs: list[Subscription]
     now: int
+    labels: Labels = field(default_factory=Labels)
     ranks: list[aggregate.CustomerRank] = field(init=False)
     ltv: dict[str, int] = field(init=False)
     rank_of: dict[str, int] = field(init=False)
@@ -177,17 +200,34 @@ class Facts:
                 continue
             if p.billing_reason == "subscription_cycle":
                 self.renewals[(p.email, p.account_id)] = self.renewals.get((p.email, p.account_id), 0) + 1
-            elif not (p.billing_reason or "").startswith("subscription"):
+            elif not (p.billing_reason or "").startswith("subscription") and not self._newsletter(p):
                 self.purchases.setdefault((p.email, p.account_id), []).append(p)
             if _excluded(p, self.now):
                 self.excluded.add(p.email)
         self.founding_prices = founding_prices(self.subs)
 
+    def _newsletter(self, p: Payment) -> bool:
+        """Made by the newsletter's platform, e.g. a Substack gift subscription: not a revenue source's sale."""
+        return p.application is not None and self.labels.applications.get(p.application) == NEWSLETTER
+
     def founding(self, s: Subscription) -> bool:
+        if s.price_id is not None and s.price_id in self.labels.plans:
+            return self.labels.plans[s.price_id] == "founding"
         return is_founding(s, self.founding_prices)
 
     def has_founding_plan(self) -> bool:
-        return bool(self.founding_prices) or any("founding" in (s.plan or "").lower() for s in self.subs)
+        return any(self.founding(s) for s in self.subs) or "founding" in self.labels.plans.values()
+
+    def source_payments(self, source: RevenueSource) -> dict[str, list[Payment]]:
+        """A revenue source's sales by email, oldest first: from its confirmed applications when there are
+        any, else every one-off payment on the account it's paid through."""
+        if source.applications:
+            out: dict[str, list[Payment]] = {}
+            for p in sorted(self.payments, key=lambda p: p.created):
+                if p.countable and p.email is not None and p.application in source.applications:
+                    out.setdefault(p.email, []).append(p)
+            return out
+        return {email: bought for (email, a), bought in self.purchases.items() if a == source.paid_via_account_id}
 
     def candidate(self, email: str, account_id: str, why: str, plan: str | None, date: int, deadline: int | None = None) -> Candidate:
         return Candidate(
@@ -330,12 +370,12 @@ def cross_sell_tier(source: RevenueSource) -> CrossSellTier:
 
 
 def _buyers(f: Facts, source: RevenueSource) -> set[str]:
-    """Who has already bought it: only knowable when it's paid through a connected account."""
-    if source.paid_via_account_id is None:
+    """Who has already bought it: only knowable when its payments can be found in Stripe."""
+    if not source.payments_known:
         return set()
-    acct = source.paid_via_account_id
-    out = {email for (email, a) in f.purchases if a == acct}
-    if source.purchase == "subscription":
+    out = set(f.source_payments(source))
+    if source.purchase == "subscription" and not source.applications:
+        acct = source.paid_via_account_id
         out |= {s.email for s in f.subs if s.email and s.account_id == acct and s.status not in NEVER_STARTED}
     return out
 
@@ -374,13 +414,12 @@ def cross_sell(f: Facts, source: RevenueSource) -> list[Candidate]:
 
 
 def repeat_booking(f: Facts, source: RevenueSource) -> list[Candidate]:
-    acct = source.paid_via_account_id
     out = []
-    for (email, a), bought in f.purchases.items():
+    for email, bought in f.source_payments(source).items():
         last = bought[-1]
-        if a == acct and last.created <= f.now - REPEAT_IDLE_DAYS * DAY:
+        if last.created <= f.now - REPEAT_IDLE_DAYS * DAY:
             why = f"Bought {_times(len(bought), 'time')}, last {_ago(last.created, f.now)}"
-            out.append(f.candidate(email, a, why, last.description, last.created))
+            out.append(f.candidate(email, last.account_id, why, last.description, last.created))
     return _by_value(out)
 
 
@@ -489,16 +528,16 @@ _TIER_RULES: dict[CrossSellTier, str] = {
 def _source_actions(sources: list[RevenueSource]) -> list[tuple[Action, Callable[[Facts], list[Candidate]]]]:
     out: list[tuple[Action, Callable[[Facts], list[Candidate]]]] = []
     for src in sources:
-        known = " Leaves out anyone who's already bought it." if src.paid_via_account_id else ""
+        known = " Leaves out anyone who's already bought it." if src.payments_known else ""
         out.append((
             Action(f"cross-sell-{src.id}", "cross_sell", f"Cross-sell: {src.name}", _TIER_RULES[cross_sell_tier(src)] + known,
                    f"{src.name}, with its link.", link_id=src.id),
             lambda f, src=src: cross_sell(f, src),
         ))
-        if src.purchase == "repeat" and src.paid_via_account_id:
+        if src.purchase == "repeat" and src.payments_known:
             out.append((
                 Action(f"repeat-booking-{src.id}", "cross_sell", f"Repeat booking: {src.name}",
-                       f"Bought before through its Stripe account, nothing in {REPEAT_IDLE_DAYS}+ days.",
+                       f"Bought it before, nothing in {REPEAT_IDLE_DAYS}+ days.",
                        f"Book {src.name} again.", link_id=src.id, needs_subscriptions=False),
                 lambda f, src=src: repeat_booking(f, src),
             ))
@@ -523,14 +562,23 @@ def audience(
     return Audience(action, people)
 
 
+def with_applications(sources: list[RevenueSource], labels: Labels) -> list[RevenueSource]:
+    """Each revenue source with the applications the writer confirmed for it."""
+    return [
+        replace(src, applications=frozenset(app for app, label in labels.applications.items() if label == src.id))
+        for src in sources
+    ]
+
+
 def audiences(
     payments: list[Payment], subs: list[Subscription], sources: list[RevenueSource], now: int,
-    subscriptions_available: bool = True, only: str | None = None,
+    subscriptions_available: bool = True, only: str | None = None, labels: Labels | None = None,
 ) -> list[Audience]:
     """Every action's audience (or just the action `only`), in library order."""
-    facts = Facts(payments, subs, now)
+    labels = labels or Labels()
+    facts = Facts(payments, subs, now, labels)
     return [
         audience(action, rule, facts, subscriptions_available)
-        for action, rule in library(sources)
+        for action, rule in library(with_applications(sources, labels))
         if only is None or action.kind == only
     ]

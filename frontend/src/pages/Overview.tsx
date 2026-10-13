@@ -42,7 +42,7 @@ function AtRiskCard() {
   return (
     <Card
       title="At risk"
-      to="/analytics/at-risk"
+      to="/actions#retention"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `customer${n === 1 ? '' : 's'} at risk`}
@@ -88,7 +88,7 @@ function NewCustomersCard() {
   return (
     <Card
       title="New customers"
-      to="/analytics/new"
+      to="/actions/welcome"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `new customer${n === 1 ? '' : 's'}`}
@@ -112,7 +112,7 @@ function AnniversariesCard() {
   return (
     <Card
       title="Anniversaries"
-      to="/analytics/anniversaries"
+      to="/actions/anniversary"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `customer${n === 1 ? '' : 's'} reached a milestone`}
@@ -133,7 +133,7 @@ function CancellationsCard() {
   return (
     <Card
       title="Cancellations"
-      to="/analytics/cancellations"
+      to="/actions/win-back"
       query={q}
       count={q.data?.customers.length}
       statLabel={(n) => `subscription${n === 1 ? '' : 's'} canceled`}
