@@ -6,7 +6,7 @@ details, addresses, phone numbers, metadata, receipt URLs or Stripe error bodies
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Period = Literal["1m", "3m", "6m", "12m", "all"]
 # Lookback window for the event lists: past week, month or 3 months.
@@ -301,3 +301,57 @@ class RenameCredentialRequest(_In):
 
 class UserSettingsIn(_In):
     reporting_currency: str | None = Field(None, pattern=r"^[a-zA-Z]{3}$")
+
+
+# --- The writer's links: revenue sources and social profiles (audience channels) ------------
+
+LinkCategory = Literal["revenue_source", "social"]
+Purchase = Literal["once", "repeat", "subscription"]
+
+LINK_KINDS: dict[str, set[str]] = {
+    "revenue_source": {"calendly", "maven", "gumroad", "teachable", "circle", "luma", "other"},  # the platform it's sold on
+    "social": {
+        "substack", "x", "instagram", "linkedin", "youtube", "tiktok", "threads", "bluesky", "facebook",
+        "podcast", "website", "other",
+    },
+}
+
+# How a revenue source is usually bought, when the writer doesn't say.
+DEFAULT_PURCHASE: dict[str, Purchase] = {"calendly": "repeat", "luma": "repeat", "circle": "subscription"}
+
+
+class LinkOut(_Out):
+    id: str
+    category: LinkCategory
+    kind: str
+    name: str | None
+    url: str
+    paid_via_account_id: str | None  # revenue sources: the connected account it's paid through; None: elsewhere
+    purchase: Purchase | None  # revenue sources only
+    created_at: int  # unix seconds
+
+
+class LinksResponse(_Out):
+    links: list[LinkOut]
+
+
+class LinkIn(_In):
+    category: LinkCategory
+    kind: str = Field(max_length=40)
+    name: str | None = Field(None, max_length=120)
+    url: str = Field(max_length=2000, pattern=r"^https://[^\s/]+\.[^\s]+$")
+    paid_via_account_id: str | None = Field(None, max_length=255)
+    purchase: Purchase | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "LinkIn":
+        if self.kind not in LINK_KINDS[self.category]:
+            raise ValueError(f"Unknown {self.category} type")
+        self.name = self.name or None
+        if self.category == "revenue_source":
+            if self.name is None:
+                raise ValueError("A revenue source needs a name")
+            self.purchase = self.purchase or DEFAULT_PURCHASE.get(self.kind, "once")
+        elif self.paid_via_account_id is not None or self.purchase is not None:
+            raise ValueError("Only revenue sources are paid for")
+        return self

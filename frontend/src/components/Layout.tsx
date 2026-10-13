@@ -1,8 +1,9 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { NavLink, Outlet, useMatch, useNavigate } from 'react-router'
 import { ApiError } from '../api'
+import { ImportProgress } from './ImportProgress'
 
 const NAV = [
   { to: '/', label: 'Overview', end: true },
@@ -24,9 +25,31 @@ function useNoCredentialsRedirect() {
   )
 }
 
+/** While an account's first import runs, views answer 'importing': show its progress instead, then reload them. */
+function useImporting(): [boolean, () => void] {
+  const queryClient = useQueryClient()
+  const [importing, setImporting] = useState(false)
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const error = event.type === 'updated' && event.action.type === 'error' ? event.action.error : null
+        if (error instanceof ApiError && error.code === 'importing') setImporting(true)
+      }),
+    [queryClient],
+  )
+  const done = useCallback(() => {
+    setImporting(false)
+    queryClient.invalidateQueries()
+  }, [queryClient])
+  return [importing, done]
+}
+
 export function Layout() {
   const { user, logout } = useAuth0()
   useNoCredentialsRedirect()
+  const [importing, importDone] = useImporting()
+  // Settings stays reachable: it's where a failed import is retried.
+  const onSettings = useMatch('/settings') !== null
   return (
     <>
       <header className="app-header">
@@ -50,9 +73,7 @@ export function Layout() {
           </div>
         </div>
       </header>
-      <main>
-        <Outlet />
-      </main>
+      <main>{importing && !onSettings ? <ImportProgress onDone={importDone} /> : <Outlet />}</main>
     </>
   )
 }

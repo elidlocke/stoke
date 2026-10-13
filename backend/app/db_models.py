@@ -157,3 +157,23 @@ class StripeBackfill(Base):
     started_at: Mapped[datetime | None]
     finished_at: Mapped[datetime | None]
     heartbeat_at: Mapped[datetime | None]
+
+
+class WriterLink(Base):
+    """Something of the writer's to point readers at: a revenue source they sell or a social profile. Entered in Settings; actions use them as their call to action."""
+
+    __tablename__ = "writer_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(Text)  # revenue_source | social
+    kind: Mapped[str] = mapped_column(Text)  # e.g. coaching, substack_referral, instagram (see app/models.py)
+    name: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    # Revenue sources only. The connected account the revenue source is paid through (credential_account_id), so its
+    # buyers can be found in Stripe; None: paid somewhere Stoke can't see.
+    paid_via_account_id: Mapped[str | None] = mapped_column(Text)
+    purchase: Mapped[str | None] = mapped_column(Text)  # revenue sources only: once | repeat | subscription
+    position: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

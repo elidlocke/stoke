@@ -826,6 +826,27 @@ td.actions {
   flex-basis: 100%;
   margin: 0;
 }
+.add-link {
+  margin-top: 12px;
+  max-width: 720px;
+}
+.link-form label {
+  flex: 1 1 200px;
+}
+.link-form label.wide {
+  flex-basis: 100%;
+}
+.link-form select {
+  width: 100%;
+}
+.form-buttons {
+  display: flex;
+  gap: 10px;
+}
+td.link-url {
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
 .add-key {
   margin-top: 16px;
   max-width: 720px;
@@ -850,4 +871,22 @@ td.actions {
 }
 .add-key .fields label {
   flex: 1 1 220px;
+}
+
+/* ---- First import ---- */
+
+.import-progress {
+  max-width: 560px;
+  margin: 8vh auto 0;
+}
+.import-progress h1 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.import-progress ul {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 12px;
 }

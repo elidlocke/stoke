@@ -3,9 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
-
-// Common payout currencies; "Automatic" uses the first account's.
-const CURRENCIES = ['usd', 'eur', 'gbp', 'cad', 'aud', 'nzd', 'chf', 'sek', 'nok', 'dkk', 'jpy', 'sgd', 'inr', 'brl', 'mxn']
+import { WriterLinks } from './SettingsLinks'
 
 const PERMISSIONS = [
   'PaymentIntents',
@@ -14,6 +12,7 @@ const PERMISSIONS = [
   'Customers',
   'Subscriptions',
   'Balance transactions',
+  'Events',
   'Accounts',
 ]
 
@@ -24,7 +23,7 @@ export function Settings() {
         <h1>Settings</h1>
       </header>
       <StripeAccounts />
-      <ReportingCurrency />
+      <WriterLinks />
     </>
   )
 }
@@ -36,7 +35,12 @@ function useInvalidateAll() {
 }
 
 function StripeAccounts() {
-  const creds = useQuery({ queryKey: ['credentials'], queryFn: api.credentials })
+  const creds = useQuery({
+    queryKey: ['credentials'],
+    queryFn: api.credentials,
+    // Follow an import until it finishes.
+    refetchInterval: (q) => (q.state.data?.credentials.some((c) => c.sync_state === 'importing') ? 3000 : false),
+  })
   const list = creds.data?.credentials ?? []
   return (
     <section className="settings-section">
@@ -90,7 +94,27 @@ function Status({ cred }: { cred: Credential }) {
   return <Chip tone="ok">Ready</Chip>
 }
 
-type Editing = 'rename' | 'replace' | 'remove' | null
+/** Importing the account's payments and subscriptions into Stoke. */
+function ImportState({ cred }: { cred: Credential }) {
+  const invalidateAll = useInvalidateAll()
+  const retry = useMutation({ mutationFn: () => api.retrySync(cred.id), onSuccess: invalidateAll })
+  if (cred.status === 'invalid') return null
+  if (cred.sync_state === 'failed')
+    return (
+      <div className="small">
+        <span className="error">Import failed.</span>{' '}
+        <button className="link" onClick={() => retry.mutate()} disabled={retry.isPending}>
+          Retry
+        </button>
+        {retry.isError && <div className="error">{retry.error.message}</div>}
+      </div>
+    )
+  return (
+    <div className="muted small">{cred.sync_state === 'ready' ? 'Up to date' : 'Importing from Stripe…'}</div>
+  )
+}
+
+type Editing = 'edit' | 'remove' | null
 
 function CredentialRow({ cred }: { cred: Credential }) {
   const invalidateAll = useInvalidateAll()
@@ -121,18 +145,23 @@ function CredentialRow({ cred }: { cred: Credential }) {
         </td>
         <td className="wrap">
           <Status cred={cred} />
+          {cred.status !== 'ok' && (
+            <>
+              {' '}
+              <span className="small">
+                <button className="link" onClick={() => verify.mutate()} disabled={verify.isPending}>
+                  {verify.isPending ? 'Checking…' : 'Re-check'}
+                </button>
+              </span>
+            </>
+          )}
+          <ImportState cred={cred} />
           <div className="muted small">Checked {formatRelative(cred.last_verified_at)}</div>
           {verify.isError && <div className="error small">{verify.error.message}</div>}
         </td>
         <td className="right actions">
-          <button className="link" onClick={() => setEditing(editing === 'rename' ? null : 'rename')}>
-            Rename
-          </button>
-          <button className="link" onClick={() => setEditing(editing === 'replace' ? null : 'replace')}>
-            Replace key
-          </button>
-          <button className="link" onClick={() => verify.mutate()} disabled={verify.isPending}>
-            {verify.isPending ? 'Checking…' : 'Re-check'}
+          <button className="link" onClick={() => setEditing(editing === 'edit' ? null : 'edit')}>
+            Edit
           </button>
           <button className="link danger" onClick={() => setEditing(editing === 'remove' ? null : 'remove')}>
             Remove
@@ -142,8 +171,7 @@ function CredentialRow({ cred }: { cred: Credential }) {
       {editing && (
         <tr className="edit-row">
           <td colSpan={4}>
-            {editing === 'rename' && <RenameForm cred={cred} onDone={() => setEditing(null)} />}
-            {editing === 'replace' && <ReplaceForm cred={cred} onDone={() => setEditing(null)} />}
+            {editing === 'edit' && <EditForm cred={cred} onDone={() => setEditing(null)} />}
             {editing === 'remove' && <RemoveConfirm cred={cred} onDone={() => setEditing(null)} />}
           </td>
         </tr>
@@ -152,43 +180,26 @@ function CredentialRow({ cred }: { cred: Credential }) {
   )
 }
 
-function RenameForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
-  const invalidateAll = useInvalidateAll()
-  const [label, setLabel] = useState(cred.label ?? '')
-  const rename = useMutation({
-    mutationFn: () => api.renameCredential(cred.id, label.trim()),
-    onSuccess: () => {
-      invalidateAll()
-      onDone()
-    },
-  })
-  return (
-    <form
-      className="inline-form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        rename.mutate()
-      }}
-    >
-      <label>
-        Name shown in Stoke
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={cred.display_name} maxLength={100} autoFocus />
-      </label>
-      <button className="primary" disabled={rename.isPending}>Save</button>
-      <button type="button" className="ghost" onClick={onDone}>Cancel</button>
-      {rename.isError && <p className="error">{rename.error.message}</p>}
-    </form>
-  )
-}
-
 /** A password-type field for a Stripe key: not autocompleted, spellchecked or saved by the browser. */
-function KeyInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+function KeyInput({
+  value,
+  onChange,
+  autoFocus,
+  required = true,
+  placeholder = 'rk_live_…',
+}: {
+  value: string
+  onChange: (v: string) => void
+  autoFocus?: boolean
+  required?: boolean
+  placeholder?: string
+}) {
   return (
     <input
       type="password"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="rk_live_…"
+      placeholder={placeholder}
       autoComplete="off"
       spellCheck={false}
       autoCapitalize="off"
@@ -196,36 +207,44 @@ function KeyInput({ value, onChange, autoFocus }: { value: string; onChange: (v:
       data-1p-ignore
       data-lpignore="true"
       maxLength={255}
-      required
+      required={required}
       autoFocus={autoFocus}
     />
   )
 }
 
-function ReplaceForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
+/** Rename the account, replace its key, or both. The key is optional: left blank, it's kept. */
+function EditForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
   const invalidateAll = useInvalidateAll()
+  const [label, setLabel] = useState(cred.label ?? '')
   const [key, setKey] = useState('')
-  const replace = useMutation({
-    mutationFn: (k: string) => api.replaceKey(cred.id, k),
-    onSuccess: () => {
-      invalidateAll()
-      onDone()
+  const save = useMutation({
+    mutationFn: async (v: { label: string; key: string }) => {
+      // The key first: if Stripe rejects it, nothing is saved.
+      if (v.key) await api.replaceKey(cred.id, v.key)
+      if (v.label !== (cred.label ?? '')) await api.renameCredential(cred.id, v.label)
     },
+    onSettled: invalidateAll,
+    onSuccess: onDone,
   })
   function submit(e: FormEvent) {
     e.preventDefault()
-    replace.mutate(key.trim())
+    save.mutate({ label: label.trim(), key: key.trim() })
     setKey('') // clear the field once sent
   }
   return (
     <form className="inline-form" onSubmit={submit}>
       <label>
-        New key for {cred.label ?? cred.display_name}
-        <KeyInput value={key} onChange={setKey} autoFocus />
+        Name shown in Stoke
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={cred.display_name} maxLength={100} autoFocus />
       </label>
-      <button className="primary" disabled={replace.isPending}>{replace.isPending ? 'Checking…' : 'Replace'}</button>
+      <label>
+        New key <span className="muted">(optional)</span>
+        <KeyInput value={key} onChange={setKey} required={false} placeholder={keyPrefix(cred)} />
+      </label>
+      <button className="primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</button>
       <button type="button" className="ghost" onClick={onDone}>Cancel</button>
-      {replace.isError && <p className="error">{replace.error.message}</p>}
+      {save.isError && <p className="error">{save.error.message}</p>}
     </form>
   )
 }
@@ -299,34 +318,5 @@ function AddCredential({ first }: { first: boolean }) {
         </p>
       )}
     </form>
-  )
-}
-
-function ReportingCurrency() {
-  const invalidateAll = useInvalidateAll()
-  const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings })
-  const save = useMutation({ mutationFn: api.saveSettings, onSuccess: invalidateAll })
-  const current = settings.data?.reporting_currency ?? ''
-  const options = current && !CURRENCIES.includes(current) ? [current, ...CURRENCIES] : CURRENCIES
-
-  return (
-    <section className="settings-section">
-      <h2>Reporting currency</h2>
-      <p className="muted lede-small">Every amount is converted to this currency.</p>
-      <select
-        aria-label="Reporting currency"
-        value={current}
-        disabled={!settings.isSuccess || save.isPending}
-        onChange={(e) => save.mutate({ reporting_currency: e.target.value || null })}
-      >
-        <option value="">Automatic (first account's payout currency)</option>
-        {options.map((c) => (
-          <option key={c} value={c}>
-            {c.toUpperCase()}
-          </option>
-        ))}
-      </select>
-      {save.isError && <p className="error">{save.error.message}</p>}
-    </section>
   )
 }

@@ -4,14 +4,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, sync
+from app import credentials, links, sync
 from app.auth import UserDep
 from app.db import get_session
-from app.db_models import StripeCredential, UserSettings, credential_account_id
+from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
 from app.models import (
     AddCredentialRequest,
     CredentialOut,
     CredentialsResponse,
+    LinkIn,
+    LinkOut,
+    LinksResponse,
     MeResponse,
     RenameCredentialRequest,
     ReplaceKeyRequest,
@@ -121,3 +124,41 @@ async def put_user_settings(body: UserSettingsIn, user: UserDep, session: Sessio
     await session.commit()
     clear_scope_cache(user.id)
     return UserSettingsOut(reporting_currency=currency)
+
+
+def _link_out(link: WriterLink) -> LinkOut:
+    return LinkOut(
+        id=str(link.id),
+        category=link.category,
+        kind=link.kind,
+        name=link.name,
+        url=link.url,
+        paid_via_account_id=link.paid_via_account_id,
+        purchase=link.purchase,
+        created_at=int(link.created_at.timestamp()),
+    )
+
+
+@router.get("/links")
+async def list_links(user: UserDep, session: SessionDep) -> LinksResponse:
+    return LinksResponse(links=[_link_out(link) for link in await links.list_for_user(session, user)])
+
+
+@router.post("/links", status_code=201)
+async def add_link(body: LinkIn, user: UserDep, session: SessionDep) -> LinkOut:
+    link = await links.add(session, user, body)
+    await session.refresh(link)  # server-set timestamps
+    return _link_out(link)
+
+
+@router.put("/links/{link_id}")
+async def update_link(link_id: uuid.UUID, body: LinkIn, user: UserDep, session: SessionDep) -> LinkOut:
+    link = await links.update(session, user, link_id, body)
+    await session.refresh(link)
+    return _link_out(link)
+
+
+@router.delete("/links/{link_id}", status_code=204)
+async def delete_link(link_id: uuid.UUID, user: UserDep, session: SessionDep) -> Response:
+    await links.delete(session, user, link_id)
+    return Response(status_code=204)

@@ -221,6 +221,21 @@ export interface TrendsResponse {
   unconverted_count: number // payments excluded from take-home for lack of an FX rate
 }
 
+// not_started: never read yet; importing: the first import (or a re-import) is running;
+// ready: up to date; failed: an import stopped and needs a retry from Settings
+export type SyncState = 'not_started' | 'importing' | 'ready' | 'failed'
+
+export type SyncedObject = 'payment_intent' | 'invoice' | 'subscription' | 'customer'
+
+export interface SyncStatus {
+  accounts: {
+    id: string
+    display_name: string
+    state: SyncState
+    objects: { object: SyncedObject; state: 'pending' | 'running' | 'done' | 'skipped' | 'failed'; count: number }[]
+  }[]
+}
+
 // --- Settings ---------------------------------------------------------------------------------
 // A stored key is never returned, only its last four characters.
 
@@ -238,15 +253,30 @@ export interface Credential {
   missing_permissions: string[]
   created_at: number
   last_verified_at: number
+  sync_state: SyncState // importing the account's data into Stoke
 }
 
-export interface UserSettings {
-  reporting_currency: string | null // null: the first account's payout currency
+export type LinkCategory = 'revenue_source' | 'social'
+// How a revenue source is paid for: once (a course), per session or ticket (bookable again), or as a subscription.
+export type Purchase = 'once' | 'repeat' | 'subscription'
+
+/** One of the writer's revenue sources or social profiles. */
+export interface WriterLink {
+  id: string
+  category: LinkCategory
+  kind: string
+  name: string | null
+  url: string
+  paid_via_account_id: string | null // revenue sources: the connected account it's paid through; null: elsewhere
+  purchase: Purchase | null // revenue sources only
+  created_at: number
 }
+
+export type WriterLinkIn = Omit<WriterLink, 'id' | 'created_at'>
 
 // --- Requests ---------------------------------------------------------------------------------
 
-/** An error response. `code` is set for errors the app handles, e.g. 'no_credentials'. */
+/** An error response. `code` is set for errors the app handles: 'no_credentials', 'importing'. */
 export class ApiError extends Error {
   status: number
   code?: string
@@ -309,6 +339,7 @@ export const api = {
   newCustomers: (window: Window, account?: string, refresh = false) =>
     get<NewCustomersResponse>('/api/new-customers', { window, account, refresh: refresh ? 'true' : undefined }),
   trends: () => get<TrendsResponse>('/api/trends'),
+  syncStatus: () => get<SyncStatus>('/api/sync-status'),
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
   me: () => get<{ email: string | null }>('/api/me'),
@@ -319,7 +350,10 @@ export const api = {
   renameCredential: (id: string, label: string) =>
     request<Credential>('PATCH', `/api/credentials/${id}`, { body: { label: label || null } }),
   verifyCredential: (id: string) => request<Credential>('POST', `/api/credentials/${id}/verify`),
+  retrySync: (id: string) => request<Credential>('POST', `/api/credentials/${id}/sync`),
   deleteCredential: (id: string) => request<void>('DELETE', `/api/credentials/${id}`),
-  settings: () => get<UserSettings>('/api/settings'),
-  saveSettings: (s: UserSettings) => request<UserSettings>('PUT', '/api/settings', { body: s }),
+  links: () => get<{ links: WriterLink[] }>('/api/links'),
+  addLink: (link: WriterLinkIn) => request<WriterLink>('POST', '/api/links', { body: link }),
+  updateLink: (id: string, link: WriterLinkIn) => request<WriterLink>('PUT', `/api/links/${id}`, { body: link }),
+  deleteLink: (id: string) => request<void>('DELETE', `/api/links/${id}`),
 }
