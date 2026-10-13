@@ -15,7 +15,7 @@ from app import credentials, customer_id, db, links, service, sync
 from app.auth import Unauthenticated
 from app.config import get_settings
 from app.crypto import DecryptionError, get_cipher
-from app.routers import customers, settings, webhooks
+from app.routers import actions, customers, settings, webhooks
 from app.stripe_client import MissingPermission, NoCredentials
 
 log = logging.getLogger("stoke")
@@ -58,6 +58,7 @@ class HostCheck(TrustedHostMiddleware):
 
 app.add_middleware(HostCheck, allowed_hosts=get_settings().allowed_host_list)
 app.include_router(customers.router)
+app.include_router(actions.router)
 app.include_router(settings.router)
 app.include_router(webhooks.router)
 

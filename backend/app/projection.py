@@ -16,7 +16,7 @@ from typing import Any
 
 from app.crypto import DecryptionError, aead_open, aead_seal
 
-PROJECTION_REV = 1
+PROJECTION_REV = 2  # 2: subscription prices and payments' Connect application
 
 KEEP = "keep"  # the value as is
 SEAL = "seal"  # an email address: stored encrypted
@@ -44,9 +44,11 @@ PROJECTIONS: dict[str, Spec] = {
     "payment_intent": {
         "id": KEEP, "object": KEEP, "created": KEEP, "status": KEEP, "amount": KEEP, "currency": KEEP,
         "description": KEEP, "receipt_email": SEAL, "customer": ID,
+        "application": ID,  # the Connect platform that created it (e.g. Substack): labels where a payment came from
         "last_payment_error": {"message": KEEP},
         "latest_charge": {
             "id": KEEP, "object": KEEP, "currency": KEEP, "amount_captured": KEEP, "amount_refunded": KEEP,
+            "application": ID,
             "receipt_email": SEAL, "billing_details": {"email": SEAL},
             "balance_transaction": {
                 "id": KEEP, "currency": KEEP, "amount": KEEP,
@@ -65,7 +67,11 @@ PROJECTIONS: dict[str, Spec] = {
         "id": KEEP, "object": KEEP, "created": KEEP, "status": KEEP, "start_date": KEEP,
         "canceled_at": KEEP, "ended_at": KEEP, "cancel_at": KEEP, "customer": ID,
         "cancellation_details": {"reason": KEEP, "feedback": KEEP},  # not "comment": the customer's own words
-        "items": {"data": {"price": {"nickname": KEEP}}},
+        # The price tells plans apart (e.g. Founding) and monthly from yearly billing.
+        "items": {"data": {"price": {
+            "id": KEEP, "nickname": KEEP, "unit_amount": KEEP, "currency": KEEP,
+            "recurring": {"interval": KEEP, "interval_count": KEEP},
+        }}},
         "latest_invoice": _INVOICE,
     },
     "customer": {"id": KEEP, "object": KEEP, "created": KEEP, "deleted": KEEP, "email": SEAL},

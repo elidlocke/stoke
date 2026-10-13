@@ -8,6 +8,8 @@ import stripe
 from fastapi.testclient import TestClient
 
 from app import fetch, fx, service
+from app.actions import RevenueSource
+from app.routers import actions as actions_router
 from app.aggregate import normalize_payment, normalize_subscription
 from app.auth import CurrentUser, current_user
 from app.customer_id import customer_id
@@ -287,6 +289,28 @@ def test_trends_without_subscriptions_access(client, monkeypatch):
     monkeypatch.setattr(fetch, "subscriptions", forbidden)
     body = client.get("/api/trends").json()
     assert body["churn_available"] is False
+
+
+def test_actions_shape(client, monkeypatch):
+    async def sources(session, user):
+        return [RevenueSource("11111111-1111-1111-1111-111111111111", "gumroad", "Guide", "once", None)]
+
+    monkeypatch.setattr(actions_router, "_sources", sources)
+    resp = client.get("/api/actions")
+    assert resp.status_code == 200
+    assert_clean(resp.text)
+    by_kind = {a["kind"]: a for a in resp.json()["actions"]}
+    assert by_kind["vip"]["audience_size"] == 1  # a paying, current subscriber
+    assert by_kind["cross-sell-11111111-1111-1111-1111-111111111111"]["type"] == "cross_sell"
+
+    resp = client.get("/api/actions/vip")
+    assert resp.status_code == 200
+    assert_clean(resp.text)
+    [entry] = resp.json()["customers"]
+    assert entry["customer_id"] == customer_id("ada@example.com") and entry["why"]
+
+    assert client.get("/api/actions/nope").status_code == 404
+    assert client.get("/api/actions/welcome", params={"account": "acct_nope"}).status_code == 404
 
 
 def test_unknown_account_404(client):

@@ -2,16 +2,21 @@ import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime
 
+from app import actions as library
 from app import aggregate, fetch, fx, sync
 from app.aggregate import Payment, Subscription
 from app.models import (
     AccountOut,
+    ActionAudienceResponse,
+    ActionOut,
+    ActionsResponse,
     AccountsResponse,
     AccountSyncOut,
     AnniversariesResponse,
     AnniversaryEntry,
     AtRiskEntry,
     AtRiskResponse,
+    AudienceEntry,
     CancellationEntry,
     CancellationsResponse,
     CustomerProfileResponse,
@@ -38,6 +43,10 @@ class UnknownAccount(Exception):
 
 
 class UnknownCustomer(Exception):
+    pass
+
+
+class UnknownAction(Exception):
     pass
 
 
@@ -291,4 +300,54 @@ async def trends(user: CurrentUser, refresh: bool) -> TrendsResponse:
         months=[TrendMonthOut(**asdict(m)) for m in aggregate.trends(payments, subs, datetime.now(UTC))],
         churn_available=churn_available,
         unconverted_count=aggregate.unconverted_count(payments),
+    )
+
+
+async def _audiences(
+    user: CurrentUser, sources: list[library.RevenueSource], account_id: str | None, refresh: bool, only: str | None = None
+) -> tuple[str, list[library.Audience]]:
+    scope = await get_scope(user, refresh=refresh)
+    accts = _select(scope, account_id)
+    payments = await _payments(accts, None, scope.reporting_currency, refresh)
+    try:
+        subs, subscriptions_available = await _subscriptions(accts, refresh), True
+    except MissingPermission:
+        subs, subscriptions_available = [], False
+    now = int(datetime.now(UTC).timestamp())
+    found = library.audiences(payments, subs, sources, now, subscriptions_available, only)
+    return scope.reporting_currency, found
+
+
+def _action_out(a: library.Audience) -> ActionOut:
+    act = a.action
+    return ActionOut(
+        kind=act.kind, type=act.type, title=act.title, rule=act.rule, ask=act.ask, link_id=act.link_id,
+        unavailable=a.unavailable, audience_size=len(a.candidates),
+    )
+
+
+async def actions(
+    user: CurrentUser, sources: list[library.RevenueSource], account_id: str | None, refresh: bool
+) -> ActionsResponse:
+    currency, found = await _audiences(user, sources, account_id, refresh)
+    return ActionsResponse(reporting_currency=currency, actions=[_action_out(a) for a in found])
+
+
+async def action(
+    user: CurrentUser, sources: list[library.RevenueSource], kind: str, account_id: str | None, refresh: bool
+) -> ActionAudienceResponse:
+    currency, found = await _audiences(user, sources, account_id, refresh, only=kind)
+    if not found:
+        raise UnknownAction(kind)
+    [a] = found
+    return ActionAudienceResponse(
+        reporting_currency=currency,
+        action=_action_out(a),
+        customers=[
+            AudienceEntry(
+                email=c.email, customer_id=customer_id(c.email), account_id=c.account_id, why=c.why, plan=c.plan,
+                lifetime_value=c.lifetime_value, date=c.date, deadline=c.deadline,
+            )
+            for c in a.candidates
+        ],
     )

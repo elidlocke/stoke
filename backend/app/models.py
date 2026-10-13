@@ -227,6 +227,42 @@ class TrendsResponse(_Out):
     unconverted_count: int
 
 
+ActionType = Literal["gratitude", "upgrade", "cross_sell", "win_back", "retention"]
+
+
+class ActionOut(_Out):
+    kind: str  # e.g. welcome; one per revenue source: cross-sell-<link id>, repeat-booking-<link id>
+    type: ActionType
+    title: str
+    rule: str  # who's in the audience, with its thresholds
+    ask: str  # what the note asks for
+    link_id: str | None  # cross-sell: the revenue source it points at
+    unavailable: str | None  # why the audience can't be worked out yet; it's then empty
+    audience_size: int
+
+
+class ActionsResponse(_Out):
+    reporting_currency: str
+    actions: list[ActionOut]  # in library order
+
+
+class AudienceEntry(_Out):
+    email: str
+    customer_id: str  # opaque id for the profile URL (see app/customer_id.py)
+    account_id: str
+    why: str  # why this person, e.g. "3 renewals since Mar 2025, no failed payments"
+    plan: str | None
+    lifetime_value: int  # take-home across all time, minor units of reporting_currency
+    date: int  # unix seconds: the event behind it (subscribing, an anniversary, canceling, ...)
+    deadline: int | None  # retention: next retry, when access ends, or the evidence deadline
+
+
+class ActionAudienceResponse(_Out):
+    reporting_currency: str
+    action: ActionOut
+    customers: list[AudienceEntry]  # highest value first; retention: most urgent first
+
+
 # not_started: never read yet; importing: the first import (or a re-import) is running;
 # ready: up to date; failed: an import stopped and needs a retry from Settings
 SyncState = Literal["not_started", "importing", "ready", "failed"]

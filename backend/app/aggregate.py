@@ -542,6 +542,12 @@ class Subscription:
     invoice_currency: str | None = None
     invoice_attempts: int | None = None
     next_retry: int | None = None  # None once Stripe has stopped retrying
+    # The (first) price subscribed to. None for data stored before prices were kept.
+    price_id: str | None = None
+    price_amount: int | None = None  # per interval, in price_currency
+    price_currency: str | None = None
+    interval: str | None = None  # day, week, month or year
+    interval_count: int | None = None  # e.g. 3 with "month": billed every 3 months
 
     @property
     def current(self) -> bool:
@@ -579,6 +585,9 @@ def normalize_subscription(sub: dict, account_id: str) -> Subscription:
     customer = sub.get("customer")
     invoice = sub.get("latest_invoice") if isinstance(sub.get("latest_invoice"), dict) else {}
     details = sub.get("cancellation_details") or {}
+    items = (sub.get("items") or {}).get("data") or []
+    price = (items[0].get("price") or {}) if items else {}
+    recurring = price.get("recurring") or {}
     return Subscription(
         id=sub["id"],
         account_id=account_id,
@@ -596,6 +605,11 @@ def normalize_subscription(sub: dict, account_id: str) -> Subscription:
         invoice_currency=invoice.get("currency"),
         invoice_attempts=invoice.get("attempt_count"),
         next_retry=invoice.get("next_payment_attempt"),
+        price_id=price.get("id"),
+        price_amount=price.get("unit_amount"),
+        price_currency=price.get("currency"),
+        interval=recurring.get("interval"),
+        interval_count=recurring.get("interval_count"),
     )
 
 

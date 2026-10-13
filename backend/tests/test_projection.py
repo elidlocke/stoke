@@ -90,3 +90,19 @@ def test_expanded_references_keep_only_their_id():
     assert project("payment_intent", make_pi(), KEY)["customer"] == "cus_1"
     assert project("payment_intent", make_pi(customer="cus_9"), KEY)["customer"] == "cus_9"
     assert project("payment_intent", make_pi(latest_charge="ch_1"), KEY)["latest_charge"] == "ch_1"
+
+
+def test_prices_and_application_are_kept():
+    price = {
+        "id": "price_1", "object": "price", "nickname": "Founding", "unit_amount": 15000, "currency": "usd",
+        "recurring": {"interval": "year", "interval_count": 1, "usage_type": "licensed"},
+        "metadata": {"x": "SENSITIVE"}, "product": "prod_1",
+    }
+    stored = project("subscription", make_subscription(items={"data": [{"id": "si_1", "price": price}]}), KEY)
+    assert stored["items"]["data"][0]["price"] == {
+        "id": "price_1", "nickname": "Founding", "unit_amount": 15000, "currency": "usd",
+        "recurring": {"interval": "year", "interval_count": 1},
+    }
+    pi = make_pi(application={"id": "ca_substack", "name": "Substack"}, latest_charge=make_charge(application="ca_substack"))
+    stored = project("payment_intent", pi, KEY)
+    assert (stored["application"], stored["latest_charge"]["application"]) == ("ca_substack", "ca_substack")
