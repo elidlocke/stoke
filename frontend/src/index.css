@@ -243,18 +243,6 @@ main {
   font-size: 13px;
   margin: 8px 0 0;
 }
-.chart-table {
-  margin-top: 8px;
-  font-size: 13px;
-}
-.chart-table summary {
-  cursor: pointer;
-  color: var(--muted);
-}
-.chart-table th,
-.chart-table td {
-  padding: 6px 10px;
-}
 .delta {
   font-size: 14px;
   font-weight: 600;
@@ -761,8 +749,54 @@ button.link.danger {
 
 /* ---- Settings ---- */
 
+/* Every box is half or full width on a two-column grid; one column on phones. */
+.settings-grid,
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.form-grid {
+  gap: 12px 16px;
+  align-items: end;
+}
+.half {
+  grid-column: span 1;
+}
+.full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 720px) {
+  .settings-grid,
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .half {
+    grid-column: 1 / -1;
+  }
+}
+.form-grid > * {
+  margin: 0;
+  min-width: 0;
+}
+.form-grid select,
+.form-grid input {
+  width: 100%;
+}
+.settings-group {
+  margin: 8px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.settings-grid + .settings-group {
+  margin-top: 20px;
+}
 .settings-section {
-  margin-bottom: 36px;
+  margin-bottom: 20px;
+  min-width: 0;
 }
 .settings-section > h2 {
   margin-bottom: 4px;
@@ -770,6 +804,10 @@ button.link.danger {
 .lede-small {
   margin: 0 0 16px;
   max-width: 70ch;
+}
+/* In Settings, a section's line spans its tiles. */
+.settings-section .lede-small {
+  max-width: none;
 }
 .small {
   font-size: 13px;
@@ -801,16 +839,81 @@ td.actions {
 }
 .add-link {
   margin-top: 12px;
-  max-width: 720px;
 }
-.link-form label {
-  flex: 1 1 200px;
+.suggestions {
+  margin-bottom: 16px;
 }
-.link-form label.wide {
-  flex-basis: 100%;
+.suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
 }
-.link-form select {
+.suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.suggestion-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.payments-found {
+  margin-bottom: 16px;
+}
+.payments-found h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.payments-found-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.payments-found-list li + li {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.payment-found {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 16px;
+}
+.payment-found > .small {
+  grid-column: 2;
+}
+@media (max-width: 720px) {
+  .payment-found {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .payment-found > .small {
+    grid-column: 1;
+  }
+}
+.payment-found-select {
   width: 100%;
+}
+.other-platforms {
+  margin: 8px 0 0;
+}
+.substack-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.substack-profile > div {
+  flex: 1;
+  min-width: 0;
+}
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 .form-buttons {
   display: flex;
@@ -822,7 +925,6 @@ td.link-url {
 }
 .add-key {
   margin-top: 16px;
-  max-width: 720px;
 }
 .add-key h3 {
   margin: 0 0 8px;
@@ -835,15 +937,6 @@ td.link-url {
 }
 .steps li + li {
   margin-top: 4px;
-}
-.add-key .fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-.add-key .fields label {
-  flex: 1 1 220px;
 }
 
 /* ---- First import ---- */
@@ -1123,11 +1216,10 @@ a.button.ghost {
   font-weight: 600;
   font-size: 14px;
 }
-.home-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+.home-stack {
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-items: start;
 }
 .section-header {
   display: flex;
@@ -1137,9 +1229,6 @@ a.button.ghost {
 }
 .section-header .section-title {
   flex: 1;
-}
-.action-cards.stacked {
-  grid-template-columns: 1fr;
 }
 .action-card-why {
   margin-top: 8px !important;
@@ -1160,17 +1249,14 @@ a.button.ghost {
 .working-list {
   list-style: none;
   margin: 0 0 24px;
-  padding: 4px 20px;
+  padding: 0;
 }
 .working-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 12px 0;
-}
-.working-row + .working-row {
-  border-top: 1px solid var(--border);
+  padding: 14px 20px;
 }
 .working-what {
   display: flex;
@@ -1255,8 +1341,13 @@ a.button.primary {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+@media (max-width: 720px) {
+  .welcome-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .welcome-steps h3 {
   margin: 8px 0 4px;
@@ -1278,14 +1369,4 @@ a.button.primary {
 }
 .actions-running {
   margin-bottom: 8px;
-}
-
-/* ---- Gmail (Settings) ---- */
-
-.gmail-connected {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }

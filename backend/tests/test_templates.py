@@ -43,7 +43,7 @@ def test_unknown_fields_depend_on_the_action():
 
 
 @pytest.mark.parametrize("kind", [
-    "welcome", "anniversary", "welcome-back", "vip", "founding-upgrade", "monthly-to-annual", "cross-sell-x",
+    "welcome", "anniversary", "welcome-back", "gift-thanks", "vip", "founding-upgrade", "monthly-to-annual", "cross-sell-x",
     "repeat-booking-x", "win-back", "save", "card-failing", "dispute-check-in",
 ])
 def test_every_default_template_uses_only_its_fields(kind):

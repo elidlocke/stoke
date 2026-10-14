@@ -25,6 +25,7 @@ ActionType = Literal["gratitude", "upgrade", "cross_sell", "win_back", "retentio
 WELCOME_DAYS = 30
 ANNIVERSARY_DAYS = 30
 WELCOME_BACK_DAYS = 60
+GIFT_DAYS = 30
 VIP_TOP = 20
 FOUNDING_MIN_RENEWALS = 2
 ANNUAL_MIN_RENEWALS = 3
@@ -68,7 +69,10 @@ _DISPUTE_REASONS = {
 }
 
 
-PlanLabel = Literal["standard", "founding"]
+# monthly / annual: how it's billed; group: team or company plans; other: comp, gift or legacy plans.
+# "standard", saved before these, means not Founding: billed as its interval says.
+PlanLabel = Literal["monthly", "annual", "founding", "group", "other"]
+NO_UPGRADE = {"group", "other"}  # left out of upgrade pitches
 NEWSLETTER = "newsletter"  # an application's payments are for the newsletter itself (e.g. Substack's)
 OTHER = "other"  # neither the newsletter nor one of the writer's revenue sources
 
@@ -76,7 +80,7 @@ OTHER = "other"  # neither the newsletter nor one of the writer's revenue source
 @dataclass(frozen=True)
 class Labels:
     """What the writer confirmed in Settings (a WriterProfile)."""
-    plans: dict[str, str] = field(default_factory=dict)  # price id -> standard | founding
+    plans: dict[str, str] = field(default_factory=dict)  # price id -> a PlanLabel (or the legacy "standard")
     applications: dict[str, str] = field(default_factory=dict)  # application id -> link id | newsletter | other
 
 
@@ -215,7 +219,7 @@ class Facts:
                 continue
             if p.billing_reason == "subscription_cycle":
                 self.renewals[(p.email, p.account_id)] = self.renewals.get((p.email, p.account_id), 0) + 1
-            elif not (p.billing_reason or "").startswith("subscription") and not self._newsletter(p):
+            elif not (p.billing_reason or "").startswith("subscription") and not self._newsletter(p) and not is_gift(p):
                 self.purchases.setdefault((p.email, p.account_id), []).append(p)
             if _excluded(p, self.now):
                 self.excluded.add(p.email)
@@ -229,10 +233,22 @@ class Facts:
         """Made by the newsletter's platform, e.g. a Substack gift subscription: not a revenue source's sale."""
         return p.application is not None and self.labels.applications.get(p.application) == NEWSLETTER
 
+    def confirmed(self, s: Subscription) -> str | None:
+        """The plan's label, if the writer confirmed one."""
+        return self.labels.plans.get(s.price_id) if s.price_id is not None else None
+
     def founding(self, s: Subscription) -> bool:
-        if s.price_id is not None and s.price_id in self.labels.plans:
-            return self.labels.plans[s.price_id] == "founding"
+        if (label := self.confirmed(s)) is not None:
+            return label == "founding"
         return is_founding(s, self.founding_prices)
+
+    def monthly(self, s: Subscription) -> bool:
+        label = self.confirmed(s)
+        return label == "monthly" if label not in (None, "standard") else is_monthly(s)
+
+    def yearly(self, s: Subscription) -> bool:
+        label = self.confirmed(s)
+        return label == "annual" if label not in (None, "standard", "founding") else is_yearly(s)
 
     def has_founding_plan(self) -> bool:
         return any(self.founding(s) for s in self.subs) or "founding" in self.labels.plans.values()
@@ -308,6 +324,17 @@ def is_founding(s: Subscription, founding: set[str]) -> bool:
     return "founding" in (s.plan or "").lower() or (s.price_id is not None and s.price_id in founding)
 
 
+def suggest_plan_label(s: Subscription, founding: set[str]) -> str:
+    """Stoke's guess at a plan's label, until the writer confirms one."""
+    if is_founding(s, founding):
+        return "founding"
+    if is_yearly(s):
+        return "annual"
+    if is_monthly(s):
+        return "monthly"
+    return "other"
+
+
 def is_monthly(s: Subscription) -> bool:
     if s.interval is not None:
         return s.interval == "month" and (s.interval_count or 1) == 1
@@ -368,6 +395,26 @@ def welcome_back(f: Facts) -> list[Candidate]:
     return _by_value(out)
 
 
+_GIFT = re.compile(r"\bgift\b", re.IGNORECASE)
+
+
+def is_gift(p: Payment) -> bool:
+    """A subscription bought for someone else: on Substack, a one-off invoice for
+    "<publication> subscription gift for <their email>"."""
+    return not (p.billing_reason or "").startswith("subscription") and bool(_GIFT.search(p.description or ""))
+
+
+def gift_thanks(f: Facts) -> list[Candidate]:
+    since = f.now - GIFT_DAYS * DAY
+    out = []
+    for p in sorted(f.payments, key=lambda p: -p.created):  # their latest gift
+        if p.email and p.countable and p.created >= since and is_gift(p):
+            gifts = sum(1 for q in f.payments if q.email == p.email and q.countable and q.created >= since and is_gift(q))
+            why = f"Gave {_times(gifts, 'gift subscription')}, latest {_ago(p.created, f.now)}"
+            out.append(f.candidate(p.email, p.account_id, why, None, p.created))
+    return _by_value(out)
+
+
 def vip(f: Facts) -> list[Candidate]:
     subscribed = {s.email: s for s in sorted(f.subs, key=lambda s: s.started) if s.email and s.current}
     top = [r for r in f.ranks if r.email in subscribed][:VIP_TOP]
@@ -389,7 +436,7 @@ def _upgradable(f: Facts, min_renewals: int, fits: Callable[[Subscription], bool
             continue
         s = _staying_one(f, email)
         renewals = f.renewals.get((email, s.account_id), 0)
-        if fits(s) and renewals >= min_renewals:
+        if f.confirmed(s) not in NO_UPGRADE and fits(s) and renewals >= min_renewals:
             out.append((s, renewals))
     return out
 
@@ -408,8 +455,8 @@ def monthly_to_annual(f: Facts) -> list[Candidate]:
         f.candidate(s.email or "", s.account_id,
                     f"Monthly for {_span(f.now - s.started)}, {_times(n, 'renewal')}, no failed payments", s.plan, s.started,
                     fields={"renewals": str(n), "since": _long_month(s.started)})
-        for s, n in _upgradable(f, ANNUAL_MIN_RENEWALS, is_monthly)
-        if not any(is_yearly(o) for o in f.staying[s.email or ""])
+        for s, n in _upgradable(f, ANNUAL_MIN_RENEWALS, f.monthly)
+        if not any(f.yearly(o) for o in f.staying[s.email or ""])
     ])
 
 
@@ -454,7 +501,7 @@ def cross_sell(f: Facts, source: RevenueSource) -> list[Candidate]:
                     continue
                 if f.founding(s):
                     why = f"Founding member for {_span(f.now - s.started)}"
-                elif is_yearly(s):
+                elif f.yearly(s):
                     why = f"Annual subscriber for {_span(f.now - s.started)}"
                 else:
                     continue
@@ -543,14 +590,18 @@ _FIXED: list[tuple[Action, Callable[[Facts], list[Candidate]]]] = [
     (Action("welcome-back", "gratitude", "Welcome back",
             f"Resubscribed in the last {WELCOME_BACK_DAYS} days after canceling.",
             "None, just thanks."), welcome_back),
+    (Action("gift-thanks", "gratitude", "Gift thank-you",
+            f"Bought a gift subscription for someone else in the last {GIFT_DAYS} days.",
+            "None, just thanks.", needs_subscriptions=False), gift_thanks),
     (Action("vip", "gratitude", "VIP / testimonial",
             f"Top {VIP_TOP} by lifetime take-home and still subscribed, or any current Founding member.",
             "A testimonial."), vip),
     (Action("founding-upgrade", "upgrade", "Founding upgrade",
-            f"Current non-Founding subscriber, at least {FOUNDING_MIN_RENEWALS} renewals, no failed payments in 12 months.",
+            f"Current subscriber not on a Founding, group or other plan, at least {FOUNDING_MIN_RENEWALS} renewals, "
+            "no failed payments in 12 months.",
             "Become a Founding member."), founding_upgrade),
     (Action("monthly-to-annual", "upgrade", "Monthly → annual",
-            f"Current monthly subscriber, at least {ANNUAL_MIN_RENEWALS} renewals, no failed payments in 12 months.",
+            f"Current subscriber on a monthly plan, at least {ANNUAL_MIN_RENEWALS} renewals, no failed payments in 12 months.",
             "Switch to annual."), monthly_to_annual),
 ]
 

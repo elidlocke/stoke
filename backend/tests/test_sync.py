@@ -291,6 +291,17 @@ async def test_failed_import_is_retried_from_settings(db, make_user, keys):
     assert {b.state for b in (await backfills(db)).values()} == {"pending"}
 
 
+async def test_reimport_starts_every_import_again(db, make_user, keys):
+    user = await make_user()
+    async with db() as session:
+        cred = await credentials.add(session, user, KEY_A)
+        await session.execute(update(StripeBackfill).values(state="done", count=7, starting_after="cus_7"))
+        await session.commit()
+        await credentials.reimport(session, user, cred.id)
+    found = await backfills(db)
+    assert {(b.state, b.count, b.starting_after) for b in found.values()} == {("pending", 0, None)}
+
+
 # --- Keeping it current ---------------------------------------------------------------------------
 
 

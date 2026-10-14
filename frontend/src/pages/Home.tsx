@@ -31,11 +31,11 @@ function Dashboard() {
       {actions.isPending && <p className="muted">Working out who to reach out to…</p>}
       {actions.isError && <p className="error">{actions.error.message}</p>}
       {actions.data && (
-        <div className={working.length > 0 ? 'home-columns' : undefined}>
+        <div className="home-stack">
           {working.length > 0 && (
             <section>
               <h2 className="section-title">Working for you</h2>
-              <ul className="card working-list">
+              <ul className="cards working-list">
                 {working.map((a) => (
                   <WorkingRow key={a.kind} action={a} />
                 ))}
@@ -56,7 +56,7 @@ function Dashboard() {
             {recommended.length === 0 ? (
               <p className="muted">No one new to reach out to right now. Stoke checks again as payments come in.</p>
             ) : (
-              <div className={`cards action-cards${working.length > 0 ? ' stacked' : ''}`}>
+              <div className="cards action-cards">
                 {recommended.map((a) => (
                   <ActionCard key={a.kind} action={a} recommended />
                 ))}
@@ -109,13 +109,20 @@ function Wins() {
 
 /** What's left to set up, each with what it unlocks. Hidden once it's all done. */
 function SetupChecklist({ anyOn }: { anyOn: boolean }) {
+  const substack = useQuery({ queryKey: ['substack'], queryFn: api.substack })
   const links = useQuery({ queryKey: ['links'], queryFn: api.links })
   const plans = useQuery({ queryKey: ['plans'], queryFn: api.plans })
   const sources = useQuery({ queryKey: ['payment-sources'], queryFn: api.paymentSources })
-  if (links.isPending || plans.isPending || sources.isPending) return null
+  if (substack.isPending || links.isPending || plans.isPending || sources.isPending) return null
 
   // A list that can't be read (e.g. a key without Subscriptions access) isn't something to nag about.
   const items = [
+    {
+      done: substack.isError || substack.data.handle !== null,
+      label: 'Add your Substack handle',
+      unlocks: 'Stoke suggests your links and revenue streams from your profile',
+      to: '/settings#substack',
+    },
     {
       done: links.isError || links.data.links.some((l) => l.category === 'revenue_source'),
       label: 'Add a revenue stream',
@@ -125,14 +132,14 @@ function SetupChecklist({ anyOn }: { anyOn: boolean }) {
     {
       done: plans.isError || plans.data.plans.every((p) => p.label !== null),
       label: 'Confirm your plans',
-      unlocks: 'Makes Founding upgrade and VIP pick the right people',
+      unlocks: 'Makes the upgrade, annual and VIP actions pick the right people',
       to: '/settings#plans',
     },
     {
       done: sources.isError || sources.data.sources.every((s) => s.label !== null),
-      label: 'Confirm where payments come from',
+      label: 'Match your payment platforms to revenue streams',
       unlocks: 'So Stoke knows who has already bought what',
-      to: '/settings#payments',
+      to: '/settings#revenue',
     },
     { done: anyOn, label: 'Turn on your first action', unlocks: 'Opens its queue of notes to send', to: '/actions' },
   ]

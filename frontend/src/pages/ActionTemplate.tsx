@@ -27,11 +27,15 @@ export function TemplateEditor({
   account,
   template,
   fields,
+  enabled,
+  turnOn,
 }: {
   kind: string
   account?: string
   template: NoteTemplate
   fields: MergeField[]
+  enabled: boolean // the action is on; withdrawing approval turns it off
+  turnOn: boolean // the writer asked to turn the action on: approving does that too
 }) {
   const invalidate = useInvalidateAction(kind)
   const [subject, setSubject] = useState(template.subject)
@@ -48,6 +52,9 @@ export function TemplateEditor({
 
   const save = useMutation({ mutationFn: (update: ActionUpdate) => api.updateAction(kind, update), onSuccess: invalidate })
   const dirty = subject !== template.subject || body !== template.body
+  // Approving here also turns the action on, when that's what brought the writer here.
+  const andOn = turnOn && !enabled
+  const approve = (update: ActionUpdate) => save.mutate({ ...update, approved: true, ...(andOn && { enabled: true }) })
   const known = new Set(fields.map((f) => f.name))
 
   /** Puts the field at the cursor of the box last edited. */
@@ -98,6 +105,7 @@ export function TemplateEditor({
           </button>
         ))}
       </div>
+      {andOn && !template.approved_at && <p className="warning">Approve this note to turn the action on.</p>}
       {save.isError && <p className="error">{save.error.message}</p>}
       <div className="form-buttons">
         <button type="button" className="ghost" onClick={() => setPreviewing(true)}>
@@ -106,11 +114,16 @@ export function TemplateEditor({
         <TestSend kind={kind} account={account} subject={subject} body={body} />
         {dirty ? (
           <>
-            <button className="primary" disabled={save.isPending} onClick={() => save.mutate({ subject, body, approved: true })}>
-              Save and approve
+            <button className="primary" disabled={save.isPending} onClick={() => approve({ subject, body })}>
+              {andOn ? 'Save, approve and turn on' : 'Save and approve'}
             </button>
-            <button className="ghost" disabled={save.isPending} onClick={() => save.mutate({ subject, body })}>
-              Save draft
+            <button
+              className="ghost"
+              disabled={save.isPending}
+              title={enabled ? 'An action is only on while its note is approved.' : undefined}
+              onClick={() => save.mutate({ subject, body })}
+            >
+              {enabled ? 'Save draft and turn off' : 'Save draft'}
             </button>
             <button
               className="link"
@@ -126,13 +139,13 @@ export function TemplateEditor({
           <>
             <Chip tone="ok">Approved {formatRelative(template.approved_at)}</Chip>
             <button className="link" disabled={save.isPending} onClick={() => save.mutate({ approved: false })}>
-              Withdraw approval
+              {enabled ? 'Withdraw approval and turn off' : 'Withdraw approval'}
             </button>
           </>
         ) : (
           <>
-            <button className="primary" disabled={save.isPending} onClick={() => save.mutate({ approved: true })}>
-              Approve
+            <button className="primary" disabled={save.isPending} onClick={() => approve({})}>
+              {andOn ? 'Approve and turn on' : 'Approve'}
             </button>
             <span className="muted small">
               {template.is_default ? 'Stoke’s starting point: edit it to sound like you.' : 'Saved, not approved yet.'}
@@ -280,11 +293,11 @@ function TestSend({
   const gmail = useGmail()
   const test = useMutation({ mutationFn: () => api.testNote(kind, { subject, body, customer_id: customerId }, account) })
   // The result describes the draft and reader it was sent for, not later ones.
-  const sentFor = useRef('')
+  const [sentFor, setSentFor] = useState('')
   const current = JSON.stringify([subject, body, customerId])
   if (!gmail.data?.available) return null
   if (gmail.data.status !== 'ok') return <ConnectGmailHint action="send yourself a test" />
-  const fresh = sentFor.current === current
+  const fresh = sentFor === current
   return (
     <>
       <button
@@ -292,7 +305,7 @@ function TestSend({
         className="ghost"
         disabled={test.isPending}
         onClick={() => {
-          sentFor.current = current
+          setSentFor(current)
           test.mutate()
         }}
       >

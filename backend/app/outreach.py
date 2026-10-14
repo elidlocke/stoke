@@ -75,7 +75,8 @@ async def update(
     enabled: bool | None = None, subject: str | None = None, body: str | None = None, approved: bool | None = None,
 ) -> WriterAction:
     """Changes an action's settings. Editing the template withdraws its approval, unless it's approved in
-    the same change."""
+    the same change. An action is only on while its note is approved: turning it on needs an approved note
+    (approving it in the same change counts), and withdrawing approval turns it off."""
     for text in (subject, body):
         if text is not None and (unknown := templates.unknown_fields(text, kind)):
             raise OutreachError(f"Unknown merge field: {', '.join('{{' + f + '}}' for f in unknown)}")
@@ -95,6 +96,11 @@ async def update(
         row.approved_at = datetime.now(UTC) if approved else None
     if enabled is not None:
         row.enabled = enabled
+    if row.approved_at is None:
+        if enabled:
+            await session.rollback()
+            raise OutreachError("Approve the note to turn this action on.")
+        row.enabled = False
     await session.commit()
     return row
 

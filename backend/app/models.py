@@ -465,6 +465,34 @@ class LinksResponse(_Out):
     links: list[LinkOut]
 
 
+class LinkSuggestion(_Out):
+    """A link found on the writer's Substack profile, ready to add (POST /api/links)."""
+    category: LinkCategory
+    kind: str
+    name: str | None
+    url: str
+    purchase: Purchase | None = None  # revenue sources only
+
+
+# --- The writer's Substack ------------------------------------------------------------------------
+
+class SubstackProfileOut(_Out):
+    name: str | None
+    photo_url: str | None
+    url: str  # their profile, substack.com/@handle
+
+
+class SubstackOut(_Out):
+    handle: str | None  # None: not set yet
+    profile: SubstackProfileOut | None  # None: not set, or it couldn't be read
+    suggestions: list[LinkSuggestion]  # links on the profile not already added
+    error: str | None  # why the profile couldn't be read; the writer adds links by hand
+
+
+class SubstackIn(_In):
+    handle: str | None = Field(None, max_length=200)  # "@you", "you" or substack.com/@you; None: forget it
+
+
 class LinkIn(_In):
     category: LinkCategory
     kind: str = Field(max_length=40)
@@ -490,7 +518,8 @@ class LinkIn(_In):
 # --- The writer's profile: plan labels and where payments come from -------------------------------
 # Prices and Connect applications are referred to by opaque ids (app/customer_id.py: ref_id), never Stripe's.
 
-PlanLabel = Literal["standard", "founding"]
+# monthly / annual: how it's billed; group: team or company plans; other: comp, gift or legacy plans.
+PlanLabel = Literal["monthly", "annual", "founding", "group", "other"]
 
 
 class PlanOut(_Out):

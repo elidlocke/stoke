@@ -67,6 +67,7 @@ Stoke shows a writer who their customers are, but it doesn't help them act on it
   - Gmail being unconnected answers 409 with code `gmail_not_connected`.
 - Frontend: a Gmail section in Settings (`pages/SettingsGmail.tsx`, which shows the `?gmail=` outcome once). The Note editor has Send me a test, and its preview has Email me this copy. Queue cards have Send from Gmail, with a confirm step. Contacted shows "Sent from Gmail".
 - Tests: `tests/test_gmail.py`, with Google mocked by respx.
+- An action is only on while its note is approved. `PATCH /api/actions/{kind}` refuses to turn on an action whose note isn't approved (approving it in the same request counts), and withdrawing approval, including by saving an edit as a draft, turns the action off. `0007_actions_on_need_approval.py` turns off any action that was on without an approved note. On the action page, Turn on goes to the Note view, where the approve button becomes "Approve and turn on".
 
 ## Product decisions
 
@@ -122,6 +123,7 @@ Audited for Substack writers:
 | 1 | Welcome | Gratitude | Started a paid subscription in the last 30 days | Reply and say hi; social links | New customers |
 | 2 | Anniversary thank-you | Gratitude | Still subscribed, paid-anniversary in the last 30 days. Sent after the renewal succeeds, never before | None, just thanks | Anniversaries |
 | 3 | Welcome back | Gratitude | Resubscribed in the last 60 days after canceling | None, just thanks | new |
+| 3a | Gift thank-you | Gratitude | Bought a gift subscription in the last 30 days: a one-off payment whose description says "gift" (Substack's invoice line is "<publication> subscription gift for <recipient>"). Gifts never count as revenue-stream sales | None, just thanks | new |
 | 4 | VIP / testimonial | Gratitude | Top 20 by lifetime take-home and still subscribed, or any current Founding member | Testimonial | Top customers |
 | 5 | Founding upgrade | Upgrade | Current non-Founding subscriber, ≥ 2 renewals, no failed payments in 12 months | Become a Founding member | new |
 | 6 | Monthly → annual | Upgrade | Current monthly subscriber, ≥ 3 renewals, no failed payments in 12 months | Switch to annual | new |
@@ -147,11 +149,11 @@ With no revenue sources saved, the library shows "Add a revenue stream in Settin
 
 **Not actions:** the by-period Top customers leaderboard. Only its all-time top slice maps to VIP.
 
-**Backlog:** gift-giver thanks, and a trial-ending nudge. Each needs data Stoke doesn't store yet.
+**Backlog:** a trial-ending nudge, which needs data Stoke doesn't store yet. (Gift-giver thanks shipped as #3a. On Substack, the gift's recipient is an existing subscriber whose subscription is put into a trial, with `extended` in its metadata.)
 
 **Thresholds and types.**
 - Each action has adjustable thresholds.
-- The writer labels their Substack plans (standard / Founding) once. Until then, Founding is detected from the plan name or the highest yearly price.
+- The writer labels their Substack plans (monthly / annual / Founding / group / other) once. Until then, Founding is detected from the plan name or the highest yearly price.
 - The library groups actions by type: Gratitude, Upgrade, Cross-sell, Win-back, Retention.
 
 **Conversion checks, by type:**

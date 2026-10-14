@@ -1,4 +1,4 @@
-"""The writer's profile: which of their plans is Founding, and where their payments come from.
+"""The writer's profile: what each of their plans is, and where their payments come from.
 
 Stoke guesses both from the Stripe data; the writer confirms or corrects them in Settings, and the
 actions (app/actions.py) use what's confirmed in place of the guess.
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions import NEWSLETTER, OTHER, Labels, RevenueSource, founding_prices, is_founding
+from app.actions import NEWSLETTER, OTHER, Labels, RevenueSource, founding_prices, is_yearly, suggest_plan_label
 from app.aggregate import Payment, Subscription
 from app.auth import CurrentUser
 from app.db_models import WriterProfile
@@ -69,7 +69,7 @@ class Plan:
     interval: str | None
     interval_count: int | None
     subscribers: int  # current subscriptions on this price
-    label: str | None  # confirmed: standard | founding
+    label: str | None  # confirmed: a PlanLabel
     suggested: str  # the guess, used until it's confirmed
 
 
@@ -90,10 +90,17 @@ def plans(subs: list[Subscription], labels: Labels) -> list[Plan]:
             amount=latest.price_amount, currency=latest.price_currency,
             interval=latest.interval, interval_count=latest.interval_count,
             subscribers=sum(1 for s in own if s.current),
-            label=labels.plans.get(price_id),
-            suggested="founding" if is_founding(latest, founding) else "standard",
+            label=_label(labels.plans.get(price_id), latest),
+            suggested=suggest_plan_label(latest, founding),
         ))
     return sorted(out, key=lambda p: (-p.subscribers, p.account_id, p.amount or 0, p.price_id))
+
+
+def _label(saved: str | None, s: Subscription) -> str | None:
+    """A saved label; the legacy "standard" (not Founding) shows as how the plan is billed."""
+    if saved == "standard":
+        return "annual" if is_yearly(s) else "monthly"
+    return saved
 
 
 # ---- Where payments come from ----

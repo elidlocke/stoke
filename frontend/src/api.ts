@@ -405,7 +405,30 @@ export interface WriterLink {
 
 export type WriterLinkIn = Omit<WriterLink, 'id' | 'created_at'>
 
-export type PlanLabel = 'standard' | 'founding'
+/** A link found on the writer's Substack profile, ready to add. */
+export interface LinkSuggestion {
+  category: LinkCategory
+  kind: string
+  name: string | null
+  url: string
+  purchase: Purchase | null // revenue sources only
+}
+
+export interface SubstackProfile {
+  name: string | null
+  photo_url: string | null
+  url: string // substack.com/@handle
+}
+
+export interface Substack {
+  handle: string | null // null: not set yet
+  profile: SubstackProfile | null // null: not set, or it couldn't be read
+  suggestions: LinkSuggestion[] // links on the profile not already added
+  error: string | null // why the profile couldn't be read
+}
+
+// monthly / annual: how it's billed; group: team or company plans; other: comp, gift or legacy plans.
+export type PlanLabel = 'monthly' | 'annual' | 'founding' | 'group' | 'other'
 
 /** One of the writer's subscription prices. */
 export interface Plan {
@@ -552,7 +575,10 @@ export const api = {
     request<Credential>('PATCH', `/api/credentials/${id}`, { body: { label: label || null } }),
   verifyCredential: (id: string) => request<Credential>('POST', `/api/credentials/${id}/verify`),
   retrySync: (id: string) => request<Credential>('POST', `/api/credentials/${id}/sync`),
+  reimport: (id: string) => request<Credential>('POST', `/api/credentials/${id}/reimport`),
   deleteCredential: (id: string) => request<void>('DELETE', `/api/credentials/${id}`),
+  substack: () => get<Substack>('/api/substack'),
+  setSubstackHandle: (handle: string | null) => request<Substack>('PUT', '/api/substack', { body: { handle } }),
   links: () => get<{ links: WriterLink[] }>('/api/links'),
   addLink: (link: WriterLinkIn) => request<WriterLink>('POST', '/api/links', { body: link }),
   updateLink: (id: string, link: WriterLinkIn) => request<WriterLink>('PUT', `/api/links/${id}`, { body: link }),

@@ -16,16 +16,19 @@ SUBSTACK_FEE = (Fee("application_fee", "Substack application fee", 100),)
 MAVEN_FEE = (Fee("application_fee", "Maven Platform Fee", 500),)
 
 
-def test_plans_suggest_founding_from_the_highest_yearly_price():
+def test_plans_suggest_a_label_from_the_name_price_and_interval():
     subs = [
         sub("a@x.com", 100, interval="year", price_id="p_year", price_amount=8000, price_currency="usd", plan="Yearly plan"),
         sub("b@x.com", 100, interval="year", price_id="p_year", price_amount=8000, price_currency="usd", plan="Yearly plan"),
         sub("c@x.com", 100, interval="year", price_id="p_top", price_amount=25000, price_currency="usd", plan="Yearly plan"),
+        sub("m@x.com", 100, price_id="p_month", price_amount=800, price_currency="usd"),
+        sub("q@x.com", 100, interval="quarter", price_id="p_quarter", price_amount=2000, price_currency="usd", plan="Plan"),
         sub("old@x.com", 100),  # stored before prices: not listed
     ]
-    plans = profile.plans(subs, Labels(plans={"p_year": "standard"}))
+    plans = profile.plans(subs, Labels(plans={"p_year": "standard", "p_quarter": "group"}))
     assert [(p.price_id, p.subscribers, p.label, p.suggested) for p in plans] == [
-        ("p_year", 2, "standard", "standard"), ("p_top", 1, None, "founding"),
+        ("p_year", 2, "annual", "annual"),  # the legacy "standard": not Founding, billed yearly
+        ("p_month", 1, None, "monthly"), ("p_quarter", 1, "group", "other"), ("p_top", 1, None, "founding"),
     ]
 
 
@@ -80,9 +83,10 @@ async def test_label_plans_and_payment_sources(db, make_user, stripe_data, api):
 
     [plan] = (await api.get("/api/plans")).json()["plans"]
     assert plan["id"] == ref_id("price", "p_year") and "p_year" not in str(plan)
-    assert (plan["label"], plan["suggested"]) == (None, "standard")
+    assert (plan["label"], plan["suggested"]) == (None, "annual")
     assert (await api.put(f"/api/plans/{plan['id']}", json={"label": "founding"})).status_code == 204
     assert (await api.get("/api/plans")).json()["plans"][0]["label"] == "founding"
+    assert (await api.put(f"/api/plans/{plan['id']}", json={"label": "standard"})).status_code == 422
     assert (await api.put(f"/api/plans/{plan['id']}", json={"label": None})).status_code == 204
     assert (await api.get("/api/plans")).json()["plans"][0]["label"] is None
     assert (await api.put(f"/api/plans/{'0' * 24}", json={"label": "founding"})).status_code == 404

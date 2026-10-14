@@ -182,7 +182,14 @@ def _status(pi: dict) -> Status | None:
     return "canceled" if s == "canceled" else "failed"
 
 
+# An email in a description is often someone else's, e.g. a gift's recipient in Substack's
+# "verticals subscription gift for ada@example.com": never shown.
+_EMAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
+
+
 def _truncate(text: str | None) -> str | None:
+    if text:
+        text = _EMAIL.sub("…", text)
     if text and len(text) > DESCRIPTION_MAX:
         text = text[: DESCRIPTION_MAX - 1] + "…"
     return text

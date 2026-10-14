@@ -53,7 +53,8 @@ def test_library_order_and_types():
     src = RevenueSource("l1", "calendly", "Strategy call", "repeat", "acct_b")
     kinds = [(a.action.kind, a.action.type) for a in actions.audiences([], [], [src], NOW)]
     assert kinds == [
-        ("welcome", "gratitude"), ("anniversary", "gratitude"), ("welcome-back", "gratitude"), ("vip", "gratitude"),
+        ("welcome", "gratitude"), ("anniversary", "gratitude"), ("welcome-back", "gratitude"), ("gift-thanks", "gratitude"),
+        ("vip", "gratitude"),
         ("founding-upgrade", "upgrade"), ("monthly-to-annual", "upgrade"),
         ("cross-sell-l1", "cross_sell"), ("repeat-booking-l1", "cross_sell"),
         ("win-back", "win_back"), ("save", "retention"), ("card-failing", "retention"), ("dispute-check-in", "retention"),
@@ -75,6 +76,22 @@ def test_anniversary_waits_for_the_renewal():
     a = run(renewed + not_yet, [sub("ann@x.com", 375), sub("wait@x.com", 370)])["anniversary"]
     assert emails(a) == ["ann@x.com"]
     assert a.candidates[0].why.startswith("1 year since their first payment, on ")
+
+
+def test_gift_thanks_is_recent_gift_givers():
+    payments = [
+        pay("giver@x.com", 2, "manual", description="verticals subscription gift for …"),
+        pay("giver@x.com", 10, "manual", description="Gift subscription (1 year)"),
+        pay("old@x.com", 45, "manual", description="Gift subscription (1 year)"),  # too long ago
+        pay("tip@x.com", 1, "manual", description="Tip"),
+        pay("fail@x.com", 1, "manual", status="failed", description="Gift subscription (1 year)"),
+    ]
+    a = run(payments, [])["gift-thanks"]
+    assert emails(a) == ["giver@x.com"]
+    assert a.candidates[0].why == "Gave 2 gift subscriptions, latest 2 days ago"
+    # A gift isn't a sale of a revenue stream paid through the same account.
+    guide = RevenueSource("guide", "gumroad", "Guide", "once", "acct_a")
+    assert "giver@x.com" in emails(run(payments, [sub("giver@x.com", 400)], [guide])["cross-sell-guide"])
 
 
 def test_welcome_back():
@@ -249,6 +266,20 @@ def test_plan_labels_override_the_founding_guess():
 
     none = run(payments, [loyal, named], labels=actions.Labels(plans={"p_named": "standard"}))["founding-upgrade"]
     assert none.unavailable
+
+
+def test_plan_labels_say_how_a_plan_is_billed_and_who_is_pitched_upgrades():
+    m_p, monthly = monthly_subscriber("m@x.com", 4, price_id="p_m")
+    g_p, group = monthly_subscriber("g@x.com", 4, price_id="p_g")
+    payments, subs = m_p + g_p, [monthly, group, sub("f@x.com", 400, interval="year", price_id="p_f", plan="Patron")]
+    found = run(payments, subs, labels=actions.Labels(plans={"p_g": "group", "p_f": "founding"}))
+    assert emails(found["founding-upgrade"]) == ["m@x.com"]  # a group plan isn't pitched
+    assert emails(found["monthly-to-annual"]) == ["m@x.com"]
+
+    # Billed monthly, but the writer says it's annual (e.g. an annual plan paid in installments).
+    found = run(payments, subs, labels=actions.Labels(plans={"p_m": "annual", "p_g": "other", "p_f": "founding"}))
+    assert emails(found["monthly-to-annual"]) == []
+    assert emails(found["founding-upgrade"]) == ["m@x.com"]
 
 
 def test_confirmed_applications_find_a_sources_buyers_on_any_account():

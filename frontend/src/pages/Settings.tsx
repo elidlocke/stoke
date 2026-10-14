@@ -5,8 +5,9 @@ import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
 import { GmailSettings } from './SettingsGmail'
-import { WriterLinks } from './SettingsLinks'
-import { WriterProfile } from './SettingsProfile'
+import { AudienceChannels, RevenueStreams } from './SettingsLinks'
+import { Plans } from './SettingsProfile'
+import { SubstackProfile } from './SettingsSubstack'
 
 const PERMISSIONS = [
   'PaymentIntents',
@@ -26,10 +27,22 @@ export function Settings() {
       <header className="page-header">
         <h1>Settings</h1>
       </header>
-      <StripeAccounts />
-      <GmailSettings />
-      <WriterLinks />
-      <WriterProfile />
+      {/* In the order a writer needs them: connect their data, check what Stoke found, then start sending. */}
+      <h2 className="settings-group">Connect</h2>
+      <div className="settings-grid">
+        <SubstackProfile />
+        <StripeAccounts />
+      </div>
+      <h2 className="settings-group">Refine what Stoke found</h2>
+      <div className="settings-grid">
+        <Plans />
+        <RevenueStreams />
+        <AudienceChannels />
+      </div>
+      <h2 className="settings-group">Start engaging</h2>
+      <div className="settings-grid">
+        <GmailSettings />
+      </div>
     </>
   )
 }
@@ -62,11 +75,12 @@ function StripeAccounts() {
   const list = creds.data?.credentials ?? []
   const { hash } = useLocation()
   return (
-    <section className="settings-section">
-      <h2 id="stripe">Stripe accounts</h2>
+    <section className="settings-section full">
+      <h2 id="stripe">
+        2 · Your Stripe accounts {list.some((c) => c.status !== 'invalid') && <Chip tone="ok">Connected</Chip>}
+      </h2>
       <p className="muted lede-small">
-        Add a key for each Stripe account you sell through. Stoke only reads from Stripe. Keys are encrypted before
-        they're stored and are never shown again, only their last four characters.
+        Connect Stripe so Stoke can segment your paid subscribers. Read-only; keys are encrypted and never shown again.
       </p>
       {creds.isError && <p className="error">{creds.error.message}</p>}
       {list.length > 0 && (
@@ -145,6 +159,7 @@ function CredentialRow({ cred }: { cred: Credential }) {
   const invalidateAll = useInvalidateAll()
   const [editing, setEditing] = useState<Editing>(null)
   const verify = useMutation({ mutationFn: () => api.verifyCredential(cred.id), onSuccess: invalidateAll })
+  const reimport = useMutation({ mutationFn: () => api.reimport(cred.id), onSuccess: invalidateAll })
 
   return (
     <>
@@ -183,8 +198,19 @@ function CredentialRow({ cred }: { cred: Credential }) {
           <ImportState cred={cred} />
           <div className="muted small">Checked {formatRelative(cred.last_verified_at)}</div>
           {verify.isError && <div className="error small">{verify.error.message}</div>}
+          {reimport.isError && <div className="error small">{reimport.error.message}</div>}
         </td>
         <td className="right actions">
+          {cred.status !== 'invalid' && (
+            <button
+              className="link"
+              title="Read this account’s history from Stripe again, for when recent payments are missing"
+              onClick={() => reimport.mutate()}
+              disabled={reimport.isPending || cred.sync_state === 'importing'}
+            >
+              {cred.sync_state === 'importing' ? 'Importing…' : 'Re-import'}
+            </button>
+          )}
           <button className="link" onClick={() => setEditing(editing === 'edit' ? null : 'edit')}>
             Edit
           </button>
@@ -258,18 +284,20 @@ function EditForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
     setKey('') // clear the field once sent
   }
   return (
-    <form className="inline-form" onSubmit={submit}>
-      <label>
+    <form className="form-grid" onSubmit={submit}>
+      <label className="half">
         Name shown in Stoke
         <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={cred.display_name} maxLength={100} autoFocus />
       </label>
-      <label>
+      <label className="half">
         New key <span className="muted">(optional)</span>
         <KeyInput value={key} onChange={setKey} required={false} placeholder={keyPrefix(cred)} />
       </label>
-      <button className="primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</button>
-      <button type="button" className="ghost" onClick={onDone}>Cancel</button>
-      {save.isError && <p className="error">{save.error.message}</p>}
+      <div className="form-buttons full">
+        <button className="primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</button>
+        <button type="button" className="ghost" onClick={onDone}>Cancel</button>
+      </div>
+      {save.isError && <p className="error full">{save.error.message}</p>}
     </form>
   )
 }
@@ -310,9 +338,9 @@ function AddCredential({ first }: { first: boolean }) {
   }
 
   return (
-    <form className="add-key card" onSubmit={submit}>
-      <h3>{first ? 'Add your first Stripe account' : 'Add another Stripe account'}</h3>
-      <ol className="muted steps">
+    <form className="add-key card form-grid" onSubmit={submit}>
+      <h3 className="full">{first ? 'Add your first Stripe account' : 'Add another Stripe account'}</h3>
+      <ol className="muted steps full">
         <li>
           In your Stripe Dashboard, open{' '}
           <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer">
@@ -323,20 +351,20 @@ function AddCredential({ first }: { first: boolean }) {
         <li>Give it <strong>Read</strong> access to: {PERMISSIONS.join(', ')}. Leave everything else as None.</li>
         <li>Paste the key (it starts with rk_live_) below.</li>
       </ol>
-      <div className="fields">
-        <label>
-          Restricted key
-          <KeyInput value={key} onChange={setKey} />
-        </label>
-        <label>
-          Name <span className="muted">(optional)</span>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. My newsletter" maxLength={100} />
-        </label>
+      <label className="half">
+        Restricted key
+        <KeyInput value={key} onChange={setKey} />
+      </label>
+      <label className="half">
+        Name <span className="muted">(optional)</span>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. My newsletter" maxLength={100} />
+      </label>
+      <div className="form-buttons full">
         <button className="primary" disabled={add.isPending}>{add.isPending ? 'Checking with Stripe…' : 'Add account'}</button>
       </div>
-      {add.isError && <p className="error">{add.error.message}</p>}
+      {add.isError && <p className="error full">{add.error.message}</p>}
       {add.isSuccess && (
-        <p className="muted">
+        <p className="muted full">
           Added {add.data.display_name}.
           {add.data.missing_permissions.length > 0 &&
             ` It can't read ${add.data.missing_permissions.join(', ')} yet: grant Read access in Stripe, then choose Re-check.`}

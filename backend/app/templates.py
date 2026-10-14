@@ -70,6 +70,11 @@ _DEFAULTS: dict[str, tuple[str, str]] = {
         "Good to have you back",
         "Hi {{first_name}},\n\nI noticed you came back as a paid subscriber, and it made my day. Thank you for giving it another go.",
     ),
+    "gift-thanks": (
+        "Thank you for the gift",
+        "Hi {{first_name}},\n\nI saw you gave someone a subscription to my newsletter. Thank you for sharing my writing: "
+        "readers like you are how it grows.\n\nIf there's anything you'd like me to write about, just reply.",
+    ),
     "vip": (
         "A small favor?",
         "Hi {{first_name}},\n\nYou've been one of my most loyal supporters, and I'm grateful. Would you write a sentence or two about "

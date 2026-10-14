@@ -50,7 +50,7 @@ export function Actions() {
             {running.length === 0 ? (
               <p className="muted">Nothing running yet. Start with one of the actions below.</p>
             ) : (
-              <ul className="card working-list">
+              <ul className="cards working-list">
                 {running.map((a) => (
                   <WorkingRow key={a.kind} action={a} />
                 ))}

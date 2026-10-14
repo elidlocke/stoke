@@ -128,13 +128,33 @@ async def _library_entry(api, kind):
     return {a["kind"]: a for a in (await api.get("/api/actions")).json()["actions"]}[kind]
 
 
-async def test_marking_needs_the_action_on_and_approved(signed_in, stripe_data, api):
+async def test_an_action_is_only_on_while_its_note_is_approved(signed_in, stripe_data, api):
     await signed_in()
-    await api.patch("/api/actions/welcome", json={"enabled": True})
+    resp = await api.patch("/api/actions/welcome", json={"enabled": True})
+    assert resp.status_code == 400 and "Approve the note" in resp.json()["detail"]
+    welcome = await _library_entry(api, "welcome")
+    assert (welcome["enabled"], welcome["open"]) == (False, False)
     resp = await api.post("/api/actions/welcome/outreach", json={"customer_id": customer_id(NEW), "status": "sent"})
     assert resp.status_code == 400
+
+    # Approving in the same change turns it on.
+    assert (await api.patch("/api/actions/welcome", json={"enabled": True, "approved": True})).status_code == 204
+    assert (await _library_entry(api, "welcome"))["open"] is True
+
+    # Saving an edit as a draft withdraws approval, and turns it off.
+    assert (await api.patch("/api/actions/welcome", json={"body": "Hi {{first_name}}"})).status_code == 204
     welcome = await _library_entry(api, "welcome")
-    assert (welcome["enabled"], welcome["open"], welcome["to_send"]) == (True, False, 0)  # not approved yet
+    assert (welcome["enabled"], welcome["open"]) == (False, False)
+
+    await api.patch("/api/actions/welcome", json={"enabled": True, "approved": True})
+    await api.patch("/api/actions/welcome", json={"approved": False})
+    assert (await _library_entry(api, "welcome"))["enabled"] is False
+
+    # Approving alone leaves it off; turning it on after that needs nothing more.
+    await api.patch("/api/actions/welcome", json={"approved": True})
+    assert (await _library_entry(api, "welcome"))["enabled"] is False
+    assert (await api.patch("/api/actions/welcome", json={"enabled": True})).status_code == 204
+    assert (await _library_entry(api, "welcome"))["open"] is True
 
 
 async def test_missing_values_are_flagged(signed_in, stripe_data, api):

@@ -204,6 +204,16 @@ async def retry_sync(session: AsyncSession, user: CurrentUser, credential_id: uu
     return cred
 
 
+async def reimport(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID) -> StripeCredential:
+    """Import the account's history again from the start, for when what's stored has fallen behind
+    (e.g. Stripe's webhooks can't reach this server). What's stored is shown meanwhile."""
+    cred = await get_for_user(session, user, credential_id)
+    if cred.status == "invalid":
+        raise CredentialError("Stripe no longer accepts this key. Replace it, then import again.")
+    await sync.start_backfill(credential_account_id(cred), cred.livemode, cred.missing_permissions, restart=True)
+    return cred
+
+
 async def replace_key(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID, raw: str) -> StripeCredential:
     """Rotate a stored key. The new key must be for the same Stripe account."""
     cred = await get_for_user(session, user, credential_id)

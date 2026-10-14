@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, type ActionAudienceResponse } from '../api'
 import { actionType } from '../actionTypes'
@@ -30,7 +31,10 @@ export function Action() {
   const { kind = '' } = useParams()
   const { query, refresh } = useRefreshableQuery(['action', kind], (r) => api.action(kind, undefined, r))
   const action = query.data?.action
-  const open = action?.enabled && query.data?.template.approved_at != null
+  const approved = query.data?.template.approved_at != null
+  const open = action?.enabled && approved
+  // Turn on was clicked before the note was approved: the Note view asks for approval, which then turns it on.
+  const [turningOn, setTurningOn] = useState(false)
   // Until the action is set up, the audience; then straight to the queue.
   const { value: view, account, setValue, setAccount } = useListParams('view', VIEWS, open ? 'queue' : 'audience')
 
@@ -42,7 +46,17 @@ export function Action() {
       <header className="page-header">
         <h1>{action?.title ?? 'Action'}</h1>
         {action && <Chip tone={actionType(action.type).tone}>{actionType(action.type).label}</Chip>}
-        {action && <Toggle kind={kind} enabled={action.enabled} />}
+        {action && (
+          <Toggle
+            kind={kind}
+            enabled={action.enabled}
+            approved={approved}
+            onNeedsApproval={() => {
+              setTurningOn(true)
+              setValue('template')
+            }}
+          />
+        )}
       </header>
 
       {action && (
@@ -75,7 +89,14 @@ export function Action() {
           {view === 'audience' && (
             <Audience data={query.data} account={account} setAccount={setAccount} onRefresh={refresh} fetching={query.isFetching} />
           )}
-          {view === 'template' && <TemplateEditor kind={kind} account={account} template={query.data.template} fields={query.data.fields} />}
+          {view === 'template' && <TemplateEditor
+              kind={kind}
+              account={account}
+              template={query.data.template}
+              fields={query.data.fields}
+              enabled={query.data.action.enabled}
+              turnOn={turningOn}
+            />}
           {view === 'history' && <History kind={kind} />}
         </>
       )}
@@ -89,7 +110,18 @@ export function Action() {
   )
 }
 
-function Toggle({ kind, enabled }: { kind: string; enabled: boolean }) {
+/** On or off. An action is only on while its note is approved, so turning on an unapproved one goes to the note. */
+function Toggle({
+  kind,
+  enabled,
+  approved,
+  onNeedsApproval,
+}: {
+  kind: string
+  enabled: boolean
+  approved: boolean
+  onNeedsApproval: () => void
+}) {
   const invalidate = useInvalidateAction(kind)
   const toggle = useMutation({ mutationFn: () => api.updateAction(kind, { enabled: !enabled }), onSuccess: invalidate })
   return enabled ? (
@@ -100,7 +132,7 @@ function Toggle({ kind, enabled }: { kind: string; enabled: boolean }) {
       </button>
     </span>
   ) : (
-    <button className="primary" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+    <button className="primary" disabled={toggle.isPending} onClick={() => (approved ? toggle.mutate() : onNeedsApproval())}>
       Turn on
     </button>
   )

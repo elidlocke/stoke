@@ -58,11 +58,11 @@ export function GmailSettings() {
   const outcome = useOutcome()
 
   return (
-    <section className="settings-section">
+    <section className="settings-section full">
       <h2 id="gmail">Gmail</h2>
       <p className="muted lede-small">
-        Connect your Gmail so Stoke can send your approved notes from it. Notes land in your Sent folder and replies come
-        to you. Stoke can only send: it can’t read, search or delete your email.
+        Connect Gmail when you’re ready to send. Notes go from your address and replies come to you; Stoke can’t read
+        your email.
       </p>
       {outcome && <p className={outcome.ok ? 'muted' : 'error'}>{outcome.message}</p>}
       {gmail.isError && <p className="error">{gmail.error.message}</p>}
@@ -73,26 +73,39 @@ export function GmailSettings() {
         </button>
       )}
       {g?.available && g.email && (
-        <div className="gmail-connected">
-          <div>
-            <strong>{g.email}</strong>{' '}
-            {g.status === 'ok' ? <Chip tone="ok">Connected</Chip> : <Chip tone="bad">Needs reconnecting</Chip>}
-            <div className="muted small">
-              {g.status === 'revoked'
-                ? 'Google stopped letting Stoke send from this address. Reconnect to keep sending.'
-                : g.last_sent_at
-                  ? `Last sent ${formatRelative(g.last_sent_at)}`
-                  : `Connected ${formatRelative(g.connected_at!)}`}
-            </div>
-          </div>
-          <div className="form-buttons">
-            <button className={g.status === 'ok' ? 'ghost' : 'primary'} disabled={connect.isPending} onClick={() => connect.mutate()}>
-              {g.status === 'ok' ? 'Use a different Gmail' : 'Reconnect'}
-            </button>
-            <button className="link danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-              Disconnect
-            </button>
-          </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Status</th>
+                <th className="right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="wrap">{g.email}</td>
+                <td className="wrap">
+                  {g.status === 'ok' ? <Chip tone="ok">Connected</Chip> : <Chip tone="bad">Needs reconnecting</Chip>}
+                  <div className="muted small">
+                    {g.status === 'revoked'
+                      ? 'Google stopped letting Stoke send from this address. Reconnect to keep sending.'
+                      : g.last_sent_at
+                        ? `Last sent ${formatRelative(g.last_sent_at)}`
+                        : `Connected ${formatRelative(g.connected_at!)}`}
+                  </div>
+                </td>
+                <td className="right actions">
+                  <button className="link" disabled={connect.isPending} onClick={() => connect.mutate()}>
+                    {g.status === 'ok' ? 'Use a different Gmail' : 'Reconnect'}
+                  </button>
+                  <button className="link danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+                    Disconnect
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
       {connect.isError && <p className="error">{connect.error.message}</p>}

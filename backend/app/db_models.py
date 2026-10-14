@@ -30,6 +30,7 @@ class UserSettings(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     # Currency everything is converted to. None: the first account's payout currency.
     reporting_currency: Mapped[str | None] = mapped_column(String(3))
+    substack_handle: Mapped[str | None] = mapped_column(Text)  # e.g. "sarahfay", from substack.com/@sarahfay
 
 
 class StripeCredential(Base):

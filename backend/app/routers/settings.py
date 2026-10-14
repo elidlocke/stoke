@@ -4,8 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, links, profile, service, sync
-from app.auth import UserDep
+from app import credentials, links, profile, service, substack, sync
+from app.auth import CurrentUser, UserDep
 from app.db import get_session
 from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
 from app.models import (
@@ -22,6 +22,9 @@ from app.models import (
     PlansResponse,
     RenameCredentialRequest,
     ReplaceKeyRequest,
+    SubstackIn,
+    SubstackOut,
+    SubstackProfileOut,
     UserSettingsIn,
     UserSettingsOut,
 )
@@ -109,6 +112,12 @@ async def retry_credential_sync(credential_id: uuid.UUID, user: UserDep, session
     cred = await credentials.retry_sync(session, user, credential_id)
     return await _out(cred)
 
+@router.post("/credentials/{credential_id}/reimport")
+async def reimport_credential(credential_id: uuid.UUID, user: UserDep, session: SessionDep) -> CredentialOut:
+    cred = await credentials.reimport(session, user, credential_id)
+    return await _out(cred)
+
+
 @router.delete("/credentials/{credential_id}", status_code=204)
 async def delete_credential(credential_id: uuid.UUID, user: UserDep, session: SessionDep) -> Response:
     await credentials.delete(session, user, credential_id)
@@ -121,13 +130,63 @@ async def get_user_settings(user: UserDep, session: SessionDep) -> UserSettingsO
     return UserSettingsOut(reporting_currency=prefs.reporting_currency if prefs else None)
 
 
+async def _prefs(session: AsyncSession, user: CurrentUser) -> UserSettings:
+    prefs = await session.get(UserSettings, user.id)
+    if prefs is None:
+        prefs = UserSettings(user_id=user.id)
+        session.add(prefs)
+    return prefs
+
+
 @router.put("/settings")
 async def put_user_settings(body: UserSettingsIn, user: UserDep, session: SessionDep) -> UserSettingsOut:
     currency = body.reporting_currency.lower() if body.reporting_currency else None
-    await session.merge(UserSettings(user_id=user.id, reporting_currency=currency))
+    (await _prefs(session, user)).reporting_currency = currency
     await session.commit()
     clear_scope_cache(user.id)
     return UserSettingsOut(reporting_currency=currency)
+
+
+async def _substack_out(
+    session: AsyncSession, user: CurrentUser, handle: str | None, refresh: bool = False
+) -> SubstackOut:
+    if handle is None:
+        return SubstackOut(handle=None, profile=None, suggestions=[], error=None)
+    try:
+        found = await substack.read(handle, refresh)
+    except substack.NotFound:
+        return SubstackOut(handle=handle, profile=None, suggestions=[], error=f"No Substack profile found at @{handle}.")
+    except substack.Unavailable:
+        return SubstackOut(handle=handle, profile=None, suggestions=[], error=substack.UNAVAILABLE)
+    existing = [link.url for link in await links.list_for_user(session, user)]
+    return SubstackOut(
+        handle=handle,
+        profile=SubstackProfileOut(name=found.name, photo_url=found.photo_url, url=found.url),
+        suggestions=[s for s in found.links if not any(substack.same_link(s.url, url) for url in existing)],
+        error=None,
+    )
+
+
+@router.get("/substack")
+async def get_substack(user: UserDep, session: SessionDep) -> SubstackOut:
+    """The writer's Substack handle, and the links on their profile they haven't added yet."""
+    prefs = await session.get(UserSettings, user.id)
+    return await _substack_out(session, user, prefs.substack_handle if prefs else None)
+
+
+@router.put("/substack")
+async def put_substack(body: SubstackIn, user: UserDep, session: SessionDep) -> SubstackOut:
+    handle = substack.parse_handle(body.handle) if body.handle else None
+    if handle is not None:
+        try:
+            await substack.read(handle, refresh=True)  # saving again picks up profile changes
+        except substack.NotFound:
+            raise substack.SubstackError(f"No Substack profile found at @{handle}. Check the handle on your profile page.")
+        except substack.Unavailable:
+            pass  # saved anyway: it's read again next time
+    (await _prefs(session, user)).substack_handle = handle
+    await session.commit()
+    return await _substack_out(session, user, handle)  # just read
 
 
 def _link_out(link: WriterLink) -> LinkOut:
@@ -173,7 +232,7 @@ RefPath = Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")]
 
 @router.get("/plans")
 async def list_plans(user: UserDep, session: SessionDep) -> PlansResponse:
-    """The writer's subscription plans, each labeled standard or Founding (confirmed, or Stoke's guess)."""
+    """The writer's subscription plans, each with its label (confirmed, or Stoke's guess)."""
     return await service.plans(user, await profile.labels(session, user))
 
 

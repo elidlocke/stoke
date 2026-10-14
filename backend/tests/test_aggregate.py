@@ -185,6 +185,12 @@ def test_long_description_truncated():
     assert len(p.description) == aggregate.DESCRIPTION_MAX
 
 
+def test_emails_in_descriptions_are_hidden():
+    # A gift's recipient is someone else, who never paid.
+    p = norm(make_pi(description="verticals subscription gift for ada.l+news@example.co.uk"))
+    assert p.description == "verticals subscription gift for …"
+
+
 def test_cache_window_coverage():
     assert _covers(None, 100)  # all-time covers anything
     assert _covers(50, 100)

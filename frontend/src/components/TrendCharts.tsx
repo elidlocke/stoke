@@ -199,99 +199,65 @@ function Chart({
     }
 
   return (
-    <>
-      <div className="chart" role="img" aria-label={`${series.map((s) => s.label).join(' and ')} by month`}>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={chartRows} margin={{ top: 12, right: showEndLabels ? 72 : 12, bottom: 0, left: 0 }}>
-            <CartesianGrid vertical={false} stroke="var(--grid)" />
-            <XAxis
-              dataKey="label"
-              tickLine={false}
-              axisLine={{ stroke: 'var(--axis)' }}
-              tick={{ fill: 'var(--muted)', fontSize: 12 }}
-              interval="preserveStartEnd"
-              minTickGap={8}
-            />
-            <YAxis
-              allowDecimals={false}
-              tickLine={false}
-              axisLine={false}
-              tick={{ fill: 'var(--muted)', fontSize: 12 }}
-              tickFormatter={formatTick}
-              width={56}
-            />
-            <Tooltip
-              cursor={{ stroke: 'var(--axis)', strokeWidth: 1 }}
+    <div className="chart" role="img" aria-label={`${series.map((s) => s.label).join(' and ')} by month`}>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={chartRows} margin={{ top: 12, right: showEndLabels ? 72 : 12, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} stroke="var(--grid)" />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={{ stroke: 'var(--axis)' }}
+            tick={{ fill: 'var(--muted)', fontSize: 12 }}
+            interval="preserveStartEnd"
+            minTickGap={8}
+          />
+          <YAxis
+            allowDecimals={false}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: 'var(--muted)', fontSize: 12 }}
+            tickFormatter={formatTick}
+            width={56}
+          />
+          <Tooltip
+            cursor={{ stroke: 'var(--axis)', strokeWidth: 1 }}
+            isAnimationActive={false}
+            content={({ active, payload }) =>
+              active && payload?.length ? (
+                <ChartTooltip row={payload[0].payload as Row} series={series} format={format} />
+              ) : null
+            }
+          />
+          {series.flatMap((s) => [
+            <Line
+              key={`${s.key}-solid`}
+              dataKey={`${s.key}_solid`}
+              stroke={s.color}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              dot={false}
+              activeDot={{ r: 4, fill: s.color, stroke: 'var(--surface)', strokeWidth: 2 }}
+              label={endLabel(s)}
               isAnimationActive={false}
-              content={({ active, payload }) =>
-                active && payload?.length ? (
-                  <ChartTooltip row={payload[0].payload as Row} series={series} format={format} />
-                ) : null
-              }
-            />
-            {series.flatMap((s) => [
-              <Line
-                key={`${s.key}-solid`}
-                dataKey={`${s.key}_solid`}
-                stroke={s.color}
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                dot={false}
-                activeDot={{ r: 4, fill: s.color, stroke: 'var(--surface)', strokeWidth: 2 }}
-                label={endLabel(s)}
-                isAnimationActive={false}
-              />,
-              <Line
-                key={`${s.key}-partial`}
-                dataKey={`${s.key}_partial`}
-                stroke={s.color}
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                strokeLinecap="round"
-                dot={false}
-                activeDot={{ r: 4, fill: s.color, stroke: 'var(--surface)', strokeWidth: 2 }}
-                label={endLabel(s)}
-                legendType="none"
-                isAnimationActive={false}
-              />,
-            ])}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <details className="chart-table">
-        <summary>View as table</summary>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Month</th>
-                {series.map((s) => (
-                  <th key={s.key} className="right">
-                    {s.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...data.months].reverse().map((m) => (
-                <tr key={m.start}>
-                  <td>
-                    {formatMonthUTC(m.start)}
-                    {m.partial && <span className="muted"> (so far)</span>}
-                  </td>
-                  {series.map((s) => (
-                    <td key={s.key} className="right num">
-                      {format(m[s.key])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </>
+            />,
+            <Line
+              key={`${s.key}-partial`}
+              dataKey={`${s.key}_partial`}
+              stroke={s.color}
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              strokeLinecap="round"
+              dot={false}
+              activeDot={{ r: 4, fill: s.color, stroke: 'var(--surface)', strokeWidth: 2 }}
+              label={endLabel(s)}
+              legendType="none"
+              isAnimationActive={false}
+            />,
+          ])}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
