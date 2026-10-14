@@ -9,10 +9,13 @@ import { Money } from '../components/Money'
 import { formatDate, formatRelative } from '../format'
 import { customerPath } from '../routes'
 import { useInvalidateAction } from './ActionTemplate'
+import { ConnectGmailHint, useGmail } from './SettingsGmail'
 
 /** Everyone left to contact for the action, each with their note: copy or open it, then mark it sent or skip. */
 export function Queue({ kind, account, currency }: { kind: string; account?: string; currency: string }) {
   const queue = useQuery({ queryKey: ['action-queue', kind, account], queryFn: () => api.queue(kind, account) })
+  const gmail = useGmail()
+  const canSend = gmail.data?.status === 'ok'
   if (queue.isPending) return <p className="muted">Filling in each note…</p>
   if (queue.isError) return <p className="error">{queue.error.message}</p>
   if (!queue.data.open)
@@ -21,11 +24,15 @@ export function Queue({ kind, account, currency }: { kind: string; account?: str
   return (
     <>
       <p className="muted">
-        {queue.data.customers.length} to go, highest value first. Send each note from your own email, then mark it sent.
+        {queue.data.customers.length} to go, highest value first.{' '}
+        {canSend
+          ? `Send each note from ${gmail.data!.email}, or send it yourself and mark it sent.`
+          : 'Send each note from your own email, then mark it sent.'}
       </p>
+      {gmail.data?.available && !canSend && <ConnectGmailHint action="send these notes from Stoke" />}
       <div className="queue">
         {queue.data.customers.map((c) => (
-          <NoteCard key={c.customer_id} kind={kind} entry={c} currency={currency} />
+          <NoteCard key={c.customer_id} kind={kind} entry={c} currency={currency} canSend={canSend} />
         ))}
       </div>
     </>
@@ -36,7 +43,17 @@ function plain(parts: NotePart[]): string {
   return parts.map((p) => p.text).join('')
 }
 
-function NoteCard({ kind, entry: c, currency }: { kind: string; entry: QueueEntry; currency: string }) {
+function NoteCard({
+  kind,
+  entry: c,
+  currency,
+  canSend,
+}: {
+  kind: string
+  entry: QueueEntry
+  currency: string
+  canSend: boolean
+}) {
   const invalidate = useInvalidateAction(kind)
   const [editing, setEditing] = useState(false)
   const [subject, setSubject] = useState(plain(c.note.subject))
@@ -46,6 +63,13 @@ function NoteCard({ kind, entry: c, currency }: { kind: string; entry: QueueEntr
     mutationFn: (status: 'sent' | 'skipped') => api.markOutreach(kind, { customer_id: c.customer_id, status, subject, body }),
     onSuccess: invalidate,
   })
+  const [confirming, setConfirming] = useState(false)
+  const send = useMutation({
+    mutationFn: () => api.sendNote(kind, { customer_id: c.customer_id, subject, body }),
+    onSuccess: invalidate,
+    onSettled: () => setConfirming(false),
+  })
+  const busy = mark.isPending || send.isPending
   const edited = subject !== plain(c.note.subject) || body !== plain(c.note.body)
   const mailto = `mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 
@@ -99,24 +123,44 @@ function NoteCard({ kind, entry: c, currency }: { kind: string; entry: QueueEntr
         </p>
       )}
       {mark.isError && <p className="error">{mark.error.message}</p>}
+      {send.isError && <p className="error">{send.error.message}</p>}
 
-      <div className="form-buttons">
-        <a className="button ghost" href={mailto}>
-          Open in email
-        </a>
-        <button className="ghost" onClick={copy}>
-          {copied ? 'Copied' : 'Copy note'}
-        </button>
-        <button className="ghost" onClick={() => setEditing(!editing)}>
-          {editing ? 'Done editing' : 'Edit'}
-        </button>
-        <button className="primary" disabled={mark.isPending} onClick={() => mark.mutate('sent')}>
-          Mark sent
-        </button>
-        <button className="link" disabled={mark.isPending} onClick={() => mark.mutate('skipped')}>
-          Skip
-        </button>
-      </div>
+      {confirming ? (
+        <div className="form-buttons">
+          <span>
+            Send this to <strong>{c.email}</strong> from your Gmail now?
+          </span>
+          <button className="primary" disabled={busy || !subject.trim() || !body.trim()} onClick={() => send.mutate()}>
+            {send.isPending ? 'Sending…' : 'Send'}
+          </button>
+          <button className="link" disabled={send.isPending} onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="form-buttons">
+          {canSend && (
+            <button className="primary" disabled={busy} onClick={() => setConfirming(true)}>
+              Send from Gmail
+            </button>
+          )}
+          <a className="button ghost" href={mailto}>
+            Open in email
+          </a>
+          <button className="ghost" onClick={copy}>
+            {copied ? 'Copied' : 'Copy note'}
+          </button>
+          <button className="ghost" onClick={() => setEditing(!editing)}>
+            {editing ? 'Done editing' : 'Edit'}
+          </button>
+          <button className={canSend ? 'ghost' : 'primary'} disabled={busy} onClick={() => mark.mutate('sent')}>
+            Mark sent
+          </button>
+          <button className="link" disabled={busy} onClick={() => mark.mutate('skipped')}>
+            Skip
+          </button>
+        </div>
+      )}
     </article>
   )
 }
@@ -151,7 +195,15 @@ export function History({ kind }: { kind: string }) {
                   <span className="muted">No longer in your Stripe data</span>
                 )}
               </td>
-              <td>{o.status === 'sent' ? <Chip tone="ok">Sent</Chip> : <Chip>Skipped</Chip>}</td>
+              <td>
+                {o.status === 'sent' ? (
+                  <Chip tone="ok" title={o.via_gmail ? 'Sent by Stoke from your Gmail' : 'You sent it and marked it sent'}>
+                    {o.via_gmail ? 'Sent from Gmail' : 'Sent'}
+                  </Chip>
+                ) : (
+                  <Chip>Skipped</Chip>
+                )}
+              </td>
               <td>{formatDate(o.sent_at ?? o.created_at)}</td>
               <td className="wrap" title={o.body}>
                 {o.subject || <span className="muted">—</span>}

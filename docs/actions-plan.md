@@ -53,6 +53,21 @@ Stoke shows a writer who their customers are, but it doesn't help them act on it
 - `PROJECTION_REV = 3` keeps customer names (sealed, like emails) and a wider set of non-personal fields for future analytics: discounts and coupons, invoice totals, periods and status transitions, line quantities and prices, trial, pause and period dates on subscriptions, payment method type and card brand, funding and issuing country (never last4, fingerprint, expiry or cardholder), charge outcomes and risk, decline codes, refund reasons, dispute evidence status (not the evidence), and customer currency, delinquency and preferred locales. Run `scripts/resync.py` after deploying.
 - Tests: `tests/test_templates.py`, `tests/test_outreach.py`.
 
+**Step 5 (Gmail send) is built but not yet committed.** Google Cloud setup and the verification checklist are in `docs/gmail-setup.md`.
+- `0006_gmail_connections.py` and `GmailConnection` hold one Gmail per writer: the address, the refresh token sealed like a Stripe key, and status `ok` or `revoked`. `outreach` gains `gmail_message_id` and `gmail_thread_id`, and `OutreachOut.via_gmail` tells notes Stoke sent apart from ones the writer marked sent.
+- `app/gmail.py` runs Google's code flow with PKCE, asking for `gmail.send` plus `openid email`.
+  - The `state` is signed with a key derived from `CUSTOMER_ID_SECRET` (`customer_id.subkey`), names the signed-in user, and expires after 10 minutes. The PKCE verifier is derived from its nonce, so nothing is stored mid-flow.
+  - `POST /api/gmail/connect` also sets a short-lived, HttpOnly cookie holding the nonce. Google returns the browser to the API's `GET /api/gmail/callback`, which accepts the state only alongside that cookie, stores the connection for the user the state names, and redirects to `/settings?gmail=<outcome>`. Google's `code` and `state` never reach a frontend URL, where the Auth0 SDK would try to handle them as its own sign-in ("Invalid state"), and connecting doesn't depend on the Auth0 session surviving the trip to Google.
+  - Access tokens are cached in memory. When Google refuses a refresh (`invalid_grant`), the connection is marked `revoked` and the writer is asked to reconnect.
+  - Messages are plain-text RFC 822, and Gmail fills in From.
+- Settings: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The redirect URI is `CORS_ORIGIN` + `/api/gmail/callback`.
+- API: `GET /api/gmail`, `POST /api/gmail/connect` (returns Google's URL), `GET /api/gmail/callback` and `DELETE /api/gmail` (revokes at Google, then forgets the token).
+  - `POST /api/actions/{kind}/test` sends a draft, saved or not, filled for the first reader or a chosen one, to the writer's own Gmail with a `[Test]` subject. It doesn't need the action on or approved.
+  - `POST /api/actions/{kind}/send` sends one queue entry now and records it as sent. It needs the action open, the person in its audience and not yet marked.
+  - Gmail being unconnected answers 409 with code `gmail_not_connected`.
+- Frontend: a Gmail section in Settings (`pages/SettingsGmail.tsx`, which shows the `?gmail=` outcome once). The Note editor has Send me a test, and its preview has Email me this copy. Queue cards have Send from Gmail, with a confirm step. Contacted shows "Sent from Gmail".
+- Tests: `tests/test_gmail.py`, with Google mocked by respx.
+
 ## Product decisions
 
 **Action library.** Every action is listed. Each action's page shows analytics for its audience, whether or not the action is on. Turning an action on adds its outreach queue.
@@ -202,7 +217,7 @@ Each step ships on its own, is useful by itself, and is one reviewable PR.
    - The `actions` and `outreach` migration (`0005`), and templates with merge fields, written and approved in the action page.
    - A queue with preview, copy and "mark sent", plus "Contacted Nd ago" chips everywhere.
    - This proves the workflow and tracking before any integration.
-5. **Gmail send.**
+5. **Gmail send.** *Built, awaiting its PR; Google verification to submit (`docs/gmail-setup.md`).*
    - `0006_gmail_connections`. OAuth (`gmail.send`), an encrypted refresh token, test-to-self, and sending from the queue.
    - Submit Google's verification (privacy policy, domain, demo video) now, because it has a long lead time. The beta is limited to 100 test users until it's approved.
 6. **Scheduling and guardrails.** The 24-hour window, the send loop in the worker, the daily cap, the 14-day rule, dispute/refund exclusions, and pause-all.

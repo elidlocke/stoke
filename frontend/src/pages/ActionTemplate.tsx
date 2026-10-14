@@ -5,6 +5,7 @@ import { Link } from 'react-router'
 import { Chip } from '../components/Chip'
 import { Filled } from '../components/Filled'
 import { formatRelative } from '../format'
+import { ConnectGmailHint, useGmail } from './SettingsGmail'
 
 // {{name}} or {{name|fallback}}, as app/templates.py reads them.
 const FIELD = /(\{\{\s*[a-z_]+\s*(?:\|[^{}]*)?\}\})/
@@ -102,6 +103,7 @@ export function TemplateEditor({
         <button type="button" className="ghost" onClick={() => setPreviewing(true)}>
           Preview
         </button>
+        <TestSend kind={kind} account={account} subject={subject} body={body} />
         {dirty ? (
           <>
             <button className="primary" disabled={save.isPending} onClick={() => save.mutate({ subject, body, approved: true })}>
@@ -240,9 +242,70 @@ function NotePreview({
           <button type="button" className="primary" onClick={() => dialog.current?.close()}>
             Close
           </button>
+          {reader && (
+            <TestSend
+              kind={kind}
+              account={account}
+              subject={subject}
+              body={body}
+              customerId={reader.customer_id ?? undefined}
+              label="Email me this copy"
+            />
+          )}
         </div>
       </div>
     </dialog>
+  )
+}
+
+/**
+ * Emails the draft (saved or not) to the writer's own Gmail, as one reader would get it: the first in the audience,
+ * or `customerId`. Needs Gmail connected, not the template approved, so a note can be checked before approving it.
+ */
+function TestSend({
+  kind,
+  account,
+  subject,
+  body,
+  customerId,
+  label = 'Send me a test',
+}: {
+  kind: string
+  account?: string
+  subject: string
+  body: string
+  customerId?: string
+  label?: string
+}) {
+  const gmail = useGmail()
+  const test = useMutation({ mutationFn: () => api.testNote(kind, { subject, body, customer_id: customerId }, account) })
+  // The result describes the draft and reader it was sent for, not later ones.
+  const sentFor = useRef('')
+  const current = JSON.stringify([subject, body, customerId])
+  if (!gmail.data?.available) return null
+  if (gmail.data.status !== 'ok') return <ConnectGmailHint action="send yourself a test" />
+  const fresh = sentFor.current === current
+  return (
+    <>
+      <button
+        type="button"
+        className="ghost"
+        disabled={test.isPending}
+        onClick={() => {
+          sentFor.current = current
+          test.mutate()
+        }}
+      >
+        {test.isPending ? 'Sending…' : label}
+      </button>
+      {fresh && test.isSuccess && (
+        <span className="muted small">
+          Sent to {test.data.to}
+          {test.data.reader ? ` as ${test.data.reader} would get it` : ''}
+        </span>
+      )}
+      {fresh && test.isError && <span className="error small">{test.error.message}</span>}
+    </>
   )
 }
 

@@ -14,6 +14,9 @@ os.environ["AUTH0_AUDIENCE"] = "https://api.stoke.test"
 os.environ["ALLOWED_HOSTS"] = "testserver"
 os.environ.pop("DEV_MODE", None)
 os.environ["SYNC_WORKER"] = "false"
+os.environ["GOOGLE_CLIENT_ID"] = "stoke-test.apps.googleusercontent.com"
+os.environ["GOOGLE_CLIENT_SECRET"] = "google-test-secret"
+os.environ["CORS_ORIGIN"] = "http://localhost:5173"
 # A Postgres server for the tests that need one (docker compose up -d); they use their own database.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://stoke:stoke@127.0.0.1:5432/stoke_test"
@@ -28,7 +31,7 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 
 from app import db as app_db  # noqa: E402
-from app import fetch, sync  # noqa: E402
+from app import fetch, gmail, sync  # noqa: E402
 from app.auth import CurrentUser, clear_jwks_cache  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.crypto import get_cipher  # noqa: E402
@@ -215,6 +218,7 @@ def _clear():
     get_settings.cache_clear()
     get_cipher.cache_clear()
     clear_jwks_cache()
+    gmail.clear_cache()
 
 
 @pytest.fixture(autouse=True)

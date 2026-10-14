@@ -43,3 +43,8 @@ def ref_id(namespace: str, value: str) -> str:
     """An opaque id for another Stripe id (a price, a Connect application), so responses never carry
     Stripe ids. `namespace` keeps it from ever equaling a customer id."""
     return hmac.new(_key(), f"{namespace}:{value}".encode(), hashlib.sha256).hexdigest()[:ID_LENGTH]
+
+
+def subkey(purpose: str) -> bytes:
+    """A key for another purpose (e.g. signing OAuth state), derived from the same secret so no new one is needed."""
+    return hmac.new(_key(), f"subkey:{purpose}".encode(), hashlib.sha256).digest()

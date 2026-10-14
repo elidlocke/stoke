@@ -18,6 +18,7 @@ from app import templates
 from app.auth import CurrentUser
 from app.crypto import get_cipher
 from app.db_models import Outreach, WriterAction
+from app.gmail import Sent
 
 
 class OutreachError(Exception):
@@ -115,13 +116,23 @@ async def history(
     return [(o, k) for o, k in (await session.execute(q)).all()]
 
 
+async def is_marked(session: AsyncSession, user: CurrentUser, action: WriterAction, customer_id: str) -> bool:
+    """Whether the person is already marked sent or skipped for the action."""
+    return await session.scalar(select(Outreach.id).where(
+        Outreach.user_id == user.id, Outreach.action_id == action.id, Outreach.customer_id == customer_id,
+    )) is not None
+
+
 async def record(
-    session: AsyncSession, user: CurrentUser, action: WriterAction, customer_id: str, status: str, subject: str, body: str
+    session: AsyncSession, user: CurrentUser, action: WriterAction, customer_id: str, status: str, subject: str, body: str,
+    gmail: Sent | None = None,
 ) -> Outreach:
-    """A note the writer sent themselves (status sent), or a person they chose to leave out (skipped)."""
+    """A note sent (by the writer themselves, or from their Gmail with `gmail` set), or a person they chose to
+    leave out (skipped)."""
     o = Outreach(
         id=uuid.uuid4(), user_id=user.id, action_id=action.id, customer_id=customer_id, status=status,
         sent_at=datetime.now(UTC) if status == "sent" else None,
+        gmail_message_id=gmail.message_id if gmail else None, gmail_thread_id=gmail.thread_id if gmail else None,
     )
     sealed = await get_cipher().encrypt(json.dumps({"subject": subject, "body": body}), o.aad)
     o.note_ciphertext, o.note_wrapped_dek, o.note_cipher = sealed.ciphertext, sealed.wrapped_dek, sealed.cipher

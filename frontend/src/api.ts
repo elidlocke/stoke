@@ -335,6 +335,16 @@ export interface Outreach {
   body: string
   sent_at: number | null
   created_at: number
+  via_gmail: boolean // sent by Stoke from the writer's Gmail, rather than marked sent by them
+}
+
+/** The writer's Gmail, connected so Stoke can send notes from it (the gmail.send permission only). */
+export interface GmailConnection {
+  available: boolean // the server has Google sign-in set up
+  email: string | null // null: not connected
+  status: 'ok' | 'revoked' | null // revoked: Google refused Stoke's access; reconnect
+  connected_at: number | null
+  last_sent_at: number | null
 }
 
 export interface Contacted {
@@ -519,6 +529,18 @@ export const api = {
     get<{ outreach: Outreach[] }>(`/api/customers/${encodeURIComponent(customerId)}/outreach`),
   deleteOutreach: (id: string) => request<void>('DELETE', `/api/outreach/${id}`),
   contacted: () => get<{ contacted: Record<string, Contacted> }>('/api/outreach/contacted'),
+  sendNote: (kind: string, body: { customer_id: string; subject: string; body: string }) =>
+    request<Outreach>('POST', `/api/actions/${encodeURIComponent(kind)}/send`, { body }),
+  testNote: (kind: string, draft: { subject: string; body: string; customer_id?: string }, account?: string) =>
+    request<{ to: string; reader: string | null }>('POST', `/api/actions/${encodeURIComponent(kind)}/test`, {
+      params: { account },
+      body: draft,
+    }),
+  gmail: () => get<GmailConnection>('/api/gmail'),
+  connectGmail: () => request<{ url: string }>('POST', '/api/gmail/connect'),
+  finishGmail: (code: string, state: string) =>
+    request<GmailConnection>('POST', '/api/gmail/callback', { body: { code, state } }),
+  disconnectGmail: () => request<void>('DELETE', '/api/gmail'),
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
   me: () => get<{ email: string | null }>('/api/me'),

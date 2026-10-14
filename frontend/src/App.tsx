@@ -35,8 +35,11 @@ export default function App() {
       domain={import.meta.env.VITE_AUTH0_DOMAIN}
       clientId={import.meta.env.VITE_AUTH0_CLIENT_ID}
       authorizationParams={{ audience: import.meta.env.VITE_AUTH0_AUDIENCE, redirect_uri: window.location.origin }}
-      // Tokens stay in memory; a refresh token (rotated by Auth0) keeps the session across reloads.
+      // Tokens are kept in localStorage, so the session survives reloads and full-page trips (e.g. connecting Gmail).
+      // Auth0 rotates the refresh token on every use and revokes the whole family if an old one is replayed, which
+      // limits what a stolen token is worth. In memory only, every page load signed the writer out.
       useRefreshTokens
+      cacheLocation="localstorage"
       onRedirectCallback={onRedirectCallback}
     >
       <AuthGate>

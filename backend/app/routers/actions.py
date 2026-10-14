@@ -4,10 +4,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import links, outreach, profile, service
+from app import gmail, links, outreach, profile, service
 from app.auth import CurrentUser, UserDep
 from app.db import get_session
-from app.db_models import Outreach
+from app.db_models import Outreach, WriterAction
 from app.models import (
     ActionAudienceResponse,
     ActionsResponse,
@@ -20,6 +20,9 @@ from app.models import (
     PreviewIn,
     PreviewResponse,
     QueueResponse,
+    SendNoteIn,
+    TestNoteIn,
+    TestNoteOut,
 )
 
 router = APIRouter(prefix="/api")
@@ -45,6 +48,15 @@ async def _writer(session: AsyncSession, user: CurrentUser) -> service.Writer:
 async def _known(user: CurrentUser, w: service.Writer, kind: str) -> None:
     if kind not in service.titles(w):
         raise HTTPException(404, "Action not found")
+
+
+async def _open_action(user: CurrentUser, w: service.Writer, kind: str) -> WriterAction:
+    """The action's settings, if it's on and its template approved: only then can notes be sent or marked."""
+    await _known(user, w, kind)
+    row = w.settings.get(kind)
+    if row is None or not row.enabled or row.approved_at is None:
+        raise outreach.OutreachError("Turn the action on and approve its template first.")
+    return row
 
 
 @router.get("/actions")
@@ -101,16 +113,55 @@ async def preview_note(
 async def add_outreach(kind: KindPath, body: OutreachIn, user: UserDep, session: SessionDep) -> OutreachOut:
     """Mark someone in the queue as sent (the writer sent the note themselves) or skipped."""
     w = await _writer(session, user)
-    await _known(user, w, kind)
-    row = w.settings.get(kind)
-    if row is None or not row.enabled or row.approved_at is None:
-        raise outreach.OutreachError("Turn the action on and approve its template first.")
+    row = await _open_action(user, w, kind)
     if not await service.in_audience(user, w, kind, body.customer_id):
         raise outreach.OutreachError("They're not in this action's audience.")
     o = await outreach.record(session, user, row, body.customer_id, body.status, body.subject, body.body)
     await session.refresh(o)
     emails = await service.emails_by_id(user)
     return _outreach_out(o, await outreach.read_note(o), kind, service.titles(w), emails)
+
+
+@router.post("/actions/{kind}/send", status_code=201)
+async def send_note(kind: KindPath, body: SendNoteIn, user: UserDep, session: SessionDep) -> OutreachOut:
+    """Send someone in the queue their note from the writer's Gmail, and mark it sent."""
+    w = await _writer(session, user)
+    row = await _open_action(user, w, kind)
+    email = await service.audience_email(user, w, kind, body.customer_id)
+    if email is None:
+        raise outreach.OutreachError("They're not in this action's audience.")
+    if await outreach.is_marked(session, user, row, body.customer_id):
+        raise outreach.OutreachError("They're already marked for this action.")
+    sent = await gmail.send(session, user, email, body.subject, body.body)
+    o = await outreach.record(session, user, row, body.customer_id, "sent", body.subject, body.body, gmail=sent)
+    await session.refresh(o)
+    return _outreach_out(o, await outreach.read_note(o), kind, service.titles(w), {body.customer_id: email})
+
+
+TEST_NOTICE = "This is a test from Stoke: the note {who} would get. It wasn't sent to them.\n\n———\n\n"
+
+
+@router.post("/actions/{kind}/test")
+async def send_test(
+    kind: KindPath, body: TestNoteIn, user: UserDep, session: SessionDep, account: str | None = None
+) -> TestNoteOut:
+    """Email the writer a draft (saved or not) as one reader would get it, from and to their own Gmail. Works
+    before the action is on or approved, so they can check a note before approving it."""
+    conn = await gmail.connection(session, user)
+    if conn is None or conn.status != "ok":
+        raise gmail.NotConnected("Connect your Gmail in Settings to send yourself a test.")
+    try:
+        preview = await service.preview(user, await _writer(session, user), kind, body.subject, body.body, account)
+    except service.UnknownAction:
+        raise HTTPException(404, "Action not found")
+    reader = next((r for r in preview.readers if body.customer_id and r.customer_id == body.customer_id), preview.readers[0])
+    subject = "".join(p.text for p in reader.note.subject).strip()
+    text = "".join(p.text for p in reader.note.body)
+    if not text.strip():
+        raise outreach.OutreachError("Write the note first.")
+    who = reader.email or "an example reader"
+    await gmail.send(session, user, conn.email, f"[Test] {subject or '(no subject)'}", TEST_NOTICE.format(who=who) + text)
+    return TestNoteOut(to=conn.email, reader=reader.email)
 
 
 @router.get("/actions/{kind}/outreach")
@@ -158,4 +209,5 @@ def _outreach_out(
         id=str(o.id), action_kind=kind, action_title=titles.get(kind, "A removed action"), customer_id=o.customer_id,
         email=emails.get(o.customer_id), status=o.status, subject=note.subject, body=note.body,
         sent_at=int(o.sent_at.timestamp()) if o.sent_at else None, created_at=int(o.created_at.timestamp()),
+        via_gmail=o.gmail_message_id is not None,
     )

@@ -11,11 +11,12 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import credentials, customer_id, db, links, outreach, profile, service, sync
+from app import credentials, customer_id, db, gmail, links, outreach, profile, service, sync
 from app.auth import Unauthenticated
 from app.config import get_settings
 from app.crypto import DecryptionError, get_cipher
 from app.routers import actions, customers, settings, webhooks
+from app.routers import gmail as gmail_routes
 from app.stripe_client import MissingPermission, NoCredentials
 
 log = logging.getLogger("stoke")
@@ -60,6 +61,7 @@ app.add_middleware(HostCheck, allowed_hosts=get_settings().allowed_host_list)
 app.include_router(customers.router)
 app.include_router(actions.router)
 app.include_router(settings.router)
+app.include_router(gmail_routes.router)
 app.include_router(webhooks.router)
 
 
@@ -110,6 +112,22 @@ async def link_error(_: Request, exc: links.LinkError) -> JSONResponse:
 
 @app.exception_handler(outreach.OutreachError)
 async def outreach_error(_: Request, exc: outreach.OutreachError) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
+@app.exception_handler(gmail.NotConnected)
+async def gmail_not_connected(_: Request, exc: gmail.NotConnected) -> JSONResponse:
+    # The code tells the frontend to point the writer to Settings.
+    return JSONResponse({"detail": str(exc), "code": "gmail_not_connected"}, status_code=409)
+
+
+@app.exception_handler(gmail.NotConfigured)
+async def gmail_not_configured(_: Request, exc: gmail.NotConfigured) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=503)
+
+
+@app.exception_handler(gmail.GmailError)
+async def gmail_error(_: Request, exc: gmail.GmailError) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=400)
 
 

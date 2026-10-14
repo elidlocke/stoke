@@ -37,6 +37,11 @@ services:
         value: stoke-y4sf.onrender.com
       - key: CORS_ORIGIN
         value: https://stoke-y4sf.onrender.com
+      # Google OAuth client for sending from Gmail (docs/gmail-setup.md).
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: AUTH0_DOMAIN
         sync: false
       - key: AUTH0_AUDIENCE

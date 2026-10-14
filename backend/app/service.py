@@ -463,8 +463,13 @@ async def preview(
 
 
 async def in_audience(user: CurrentUser, w: Writer, kind: str, cid: str) -> bool:
+    return await audience_email(user, w, kind, cid) is not None
+
+
+async def audience_email(user: CurrentUser, w: Writer, kind: str, cid: str) -> str | None:
+    """The email of the person with id `cid`, if they're in the action's audience."""
     _, a = await _audience(user, w, kind, None, refresh=False)
-    return any(customer_id(c.email) == cid for c in a.candidates)
+    return next((c.email for c in a.candidates if customer_id(c.email) == cid), None)
 
 
 async def emails_by_id(user: CurrentUser) -> dict[str, str]:

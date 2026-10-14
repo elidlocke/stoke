@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router'
 import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
+import { GmailSettings } from './SettingsGmail'
 import { WriterLinks } from './SettingsLinks'
 import { WriterProfile } from './SettingsProfile'
 
@@ -26,6 +27,7 @@ export function Settings() {
         <h1>Settings</h1>
       </header>
       <StripeAccounts />
+      <GmailSettings />
       <WriterLinks />
       <WriterProfile />
     </>

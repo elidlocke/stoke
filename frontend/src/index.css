@@ -1279,3 +1279,13 @@ a.button.primary {
 .actions-running {
   margin-bottom: 8px;
 }
+
+/* ---- Gmail (Settings) ---- */
+
+.gmail-connected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}

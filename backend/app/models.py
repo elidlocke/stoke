@@ -341,6 +341,7 @@ class OutreachOut(_Out):
     body: str
     sent_at: int | None  # unix seconds
     created_at: int
+    via_gmail: bool  # sent by Stoke from the writer's Gmail, rather than marked sent by the writer
 
 
 class OutreachResponse(_Out):
@@ -548,6 +549,35 @@ class ActionUpdate(_In):
 class PreviewIn(_In):
     subject: str = Field("", max_length=300)
     body: str = Field("", max_length=10_000)
+
+
+class GmailOut(_Out):
+    available: bool  # the server has a Google OAuth client set up
+    email: str | None  # the connected Gmail address; None: not connected
+    status: Literal["ok", "revoked"] | None  # revoked: Google refused Stoke's access; reconnect
+    connected_at: int | None
+    last_sent_at: int | None
+
+
+class GmailConnectOut(_Out):
+    url: str  # Google's consent page
+
+
+class TestNoteIn(_In):
+    subject: str = Field("", max_length=300)
+    body: str = Field("", max_length=10_000)
+    customer_id: str | None = Field(None, pattern=r"^[0-9a-f]{24}$")  # whose copy; None: the first in the audience
+
+
+class TestNoteOut(_Out):
+    to: str  # the writer's Gmail address
+    reader: str | None  # whose copy it is; None for the example reader
+
+
+class SendNoteIn(_In):
+    customer_id: str = Field(pattern=r"^[0-9a-f]{24}$")
+    subject: str = Field(min_length=1, max_length=300)  # as it'll be sent, after any edits
+    body: str = Field(min_length=1, max_length=10_000)
 
 
 class OutreachIn(_In):

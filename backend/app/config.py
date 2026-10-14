@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     stripe_webhook_secret: SecretStr | None = None
     # Run imports and re-reads of changed objects in the background (app/sync.py). Off in tests.
     sync_worker: bool = True
+    # Google OAuth client (a "Web application" client in Google Cloud) for sending notes from the
+    # writer's Gmail with the gmail.send scope (app/gmail.py). Unset: Gmail can't be connected.
+    google_client_id: str = ""
+    google_client_secret: SecretStr | None = None
     # The built frontend (frontend/dist), served by the API in the production image. Unset in
     # development, where the Vite dev server serves it.
     static_dir: Path | None = None
@@ -68,6 +72,13 @@ class Settings(BaseSettings):
     @property
     def allowed_host_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def gmail_redirect_uri(self) -> str:
+        """Where Google sends the writer back after consent: the API's callback, at the frontend's origin (the
+        Vite dev server proxies /api; in production they share one). Register it on the OAuth client exactly
+        as written here."""
+        return self.cors_origin.rstrip("/") + "/api/gmail/callback"
 
     @property
     def dev_platform_key(self) -> str | None:

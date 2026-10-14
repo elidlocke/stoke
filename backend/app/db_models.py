@@ -232,6 +232,9 @@ class Outreach(Base):
     scheduled_for: Mapped[datetime | None]
     sent_at: Mapped[datetime | None]
     converted_at: Mapped[datetime | None]
+    # Set when Stoke sent the note from the writer's Gmail; None when the writer sent it themselves.
+    gmail_message_id: Mapped[str | None] = mapped_column(Text)
+    gmail_thread_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     @property
@@ -242,3 +245,28 @@ class Outreach(Base):
     @property
     def sealed_note(self) -> Sealed:
         return Sealed(ciphertext=self.note_ciphertext, wrapped_dek=self.note_wrapped_dek, cipher=self.note_cipher)
+
+
+class GmailConnection(Base):
+    """The writer's Gmail, connected with the gmail.send scope only. The refresh token is only stored encrypted."""
+
+    __tablename__ = "gmail_connections"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    email: Mapped[str] = mapped_column(Text)  # the Gmail address notes are sent from (and tests sent to)
+    # The refresh token, sealed like a Stripe key (app/crypto.py).
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    wrapped_dek: Mapped[bytes] = mapped_column(LargeBinary)
+    cipher: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)  # ok | revoked (Google refused the token: reconnect)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    last_sent_at: Mapped[datetime | None]
+
+    @property
+    def aad(self) -> str:
+        return f"gmail_connection:{self.user_id}"
+
+    @property
+    def sealed(self) -> Sealed:
+        return Sealed(ciphertext=self.ciphertext, wrapped_dek=self.wrapped_dek, cipher=self.cipher)
