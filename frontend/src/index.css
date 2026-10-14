@@ -900,3 +900,195 @@ td.link-url {
 .action-facts dd {
   margin: 0;
 }
+
+.action-card-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0 !important;
+}
+
+/* ---- Note templates and the queue ---- */
+
+mark.merge {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 3px;
+}
+mark.merge.fallback {
+  background: none;
+  border-bottom: 1px dashed var(--accent);
+  border-radius: 0;
+}
+mark.merge.unknown {
+  background: none;
+  outline: 1px dashed var(--bad);
+}
+.template-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+.template-editor .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.tag-editor {
+  position: relative;
+}
+.tag-input {
+  font-size: 15px;
+  line-height: 1.7;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  min-height: calc(10 * 1.7em);
+  outline: none;
+}
+.tag-input:focus {
+  border-color: var(--accent);
+}
+.tag-editor.single .tag-input {
+  min-height: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.tag {
+  display: inline-block;
+  padding: 0 7px;
+  margin: 0 1px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  background: none;
+  font: inherit;
+  font-size: 0.88em;
+  line-height: 1.45;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+button.tag-button {
+  cursor: pointer;
+}
+button.tag-button:hover {
+  background: var(--accent-soft);
+}
+.tag.unknown {
+  border-style: dashed;
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.preview-dialog {
+  width: min(640px, calc(100% - 32px));
+  max-height: calc(100% - 64px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.preview-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+.preview-content .note {
+  margin-bottom: 0;
+}
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.preview-header h2 {
+  margin: 0;
+}
+.preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-dialog .form-buttons {
+  justify-content: flex-end;
+}
+.merge-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+}
+.note-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+.note-card-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.note {
+  border-left: 3px solid var(--border);
+  padding: 2px 0 2px 12px;
+  margin-bottom: 12px;
+}
+.note-subject {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.note-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.note-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.note-edit textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.note-card .form-buttons {
+  flex-wrap: wrap;
+  align-items: center;
+}
+a.button.ghost {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.customer-notes {
+  margin: 24px 0;
+}

@@ -7,8 +7,9 @@ import pytest
 import stripe
 from fastapi.testclient import TestClient
 
-from app import fetch, fx, links, profile, service
+from app import fetch, fx, service
 from app.actions import Labels, RevenueSource
+from app.routers import actions as actions_router
 from app.aggregate import normalize_payment, normalize_subscription
 from app.auth import CurrentUser, current_user
 from app.customer_id import customer_id
@@ -291,14 +292,11 @@ def test_trends_without_subscriptions_access(client, monkeypatch):
 
 
 def test_actions_shape(client, monkeypatch):
-    async def sources(session, user):
-        return [RevenueSource("11111111-1111-1111-1111-111111111111", "gumroad", "Guide", "once", None)]
+    async def writer(session, user):
+        source = RevenueSource("11111111-1111-1111-1111-111111111111", "gumroad", "Guide", "once", None)
+        return service.Writer(sources=[source], labels=Labels(), socials=[], settings={}, sent={})
 
-    async def labels(session, user):
-        return Labels()
-
-    monkeypatch.setattr(links, "revenue_sources", sources)
-    monkeypatch.setattr(profile, "labels", labels)
+    monkeypatch.setattr(actions_router, "_writer", writer)
     resp = client.get("/api/actions")
     assert resp.status_code == 200
     assert_clean(resp.text)

@@ -8,6 +8,7 @@ What the writer has confirmed in Settings (Labels) overrides the guesses: which 
 and which Connect application each revenue source's payments come from.
 """
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -63,7 +64,7 @@ _DISPUTE_REASONS = {
     "subscription_canceled": "they say they canceled",
     "duplicate": "a duplicate charge",
     "credit_not_processed": "a refund not processed",
-    "unrecognized": "they didn't recognise the charge",
+    "unrecognized": "they didn't recognize the charge",
 }
 
 
@@ -87,6 +88,7 @@ class RevenueSource:
     name: str
     purchase: str  # once | repeat | subscription
     paid_via_account_id: str | None  # the connected account it's paid through; None: elsewhere
+    url: str = ""  # where to buy it: the note's call to action
     # Connect applications the writer confirmed its payments come from. Then exactly its payments are
     # known; otherwise every one-off payment on paid_via_account_id is taken to be one.
     applications: frozenset[str] = frozenset()
@@ -105,6 +107,8 @@ class Candidate:
     lifetime_value: int  # take-home across all time, minor units of the reporting currency
     date: int  # the event that put them here: subscribing, an anniversary, canceling, ...
     deadline: int | None = None  # retention: next retry, when access ends, or the evidence deadline
+    # Merge fields this rule knows about the person, e.g. {"renewals": "5"} (see app/templates.py).
+    fields: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -130,11 +134,21 @@ class Audience:
 
 def _date(ts: int) -> str:
     d = datetime.fromtimestamp(ts, UTC)
-    return f"{d.day} {d:%b %Y}"
+    return f"{d:%b} {d.day}, {d.year}"
 
 
 def _month(ts: int) -> str:
     return f"{datetime.fromtimestamp(ts, UTC):%b %Y}"
+
+
+def _long_month(ts: int) -> str:
+    """For notes to readers: "March 2025"."""
+    return f"{datetime.fromtimestamp(ts, UTC):%B %Y}"
+
+
+def _long_date(ts: int) -> str:
+    d = datetime.fromtimestamp(ts, UTC)
+    return f"{d:%B} {d.day}"
 
 
 def _span(seconds: int) -> str:
@@ -180,6 +194,7 @@ class Facts:
     excluded: set[str] = field(init=False)
     purchases: dict[tuple[str, str], list[Payment]] = field(init=False)  # one-off payments, (email, account)
     founding_prices: set[str] = field(init=False)
+    names: dict[str, str] = field(init=False)  # first name by email, from the latest record with one
 
     def __post_init__(self) -> None:
         self.ranks = aggregate.rank_customers(self.payments, None)
@@ -205,6 +220,10 @@ class Facts:
             if _excluded(p, self.now):
                 self.excluded.add(p.email)
         self.founding_prices = founding_prices(self.subs)
+        self.names = {}
+        for x in sorted([*self.payments, *self.subs], key=lambda x: x.created if isinstance(x, Payment) else x.started):
+            if x.email and (first := first_name(x.name)):
+                self.names[x.email] = first
 
     def _newsletter(self, p: Payment) -> bool:
         """Made by the newsletter's platform, e.g. a Substack gift subscription: not a revenue source's sale."""
@@ -229,11 +248,37 @@ class Facts:
             return out
         return {email: bought for (email, a), bought in self.purchases.items() if a == source.paid_via_account_id}
 
-    def candidate(self, email: str, account_id: str, why: str, plan: str | None, date: int, deadline: int | None = None) -> Candidate:
+    def candidate(
+        self, email: str, account_id: str, why: str, plan: str | None, date: int, deadline: int | None = None,
+        fields: dict[str, str] | None = None,
+    ) -> Candidate:
         return Candidate(
             email=email, account_id=account_id, why=why, plan=plan,
+            fields=({"first_name": self.names[email]} if email in self.names else {}) | (fields or {}),
             lifetime_value=self.ltv.get(email, 0), date=date, deadline=deadline,
         )
+
+
+_TITLES = {"mr", "mrs", "ms", "miss", "mx", "dr", "prof"}
+_COMPANY = {"ltd", "llc", "inc", "gmbh", "corp", "co", "company", "limited", "plc", "llp", "studio", "media", "group"}
+_NAME_WORD = re.compile(r"^[^\W\d_]+(?:[-'’][^\W\d_]+)*$")
+
+
+def first_name(name: str | None) -> str | None:
+    """A first name to greet someone by, or None when the name doesn't look like a person's:
+    "ADA LOVELACE" -> "Ada", "Dr. Grace Hopper" -> "Grace", "Acme Ltd 2" -> None."""
+    if not name or any(ch.isdigit() or ch == "@" for ch in name):
+        return None
+    words = [w.strip(".,") for w in name.split()]
+    if any(w.lower() in _COMPANY for w in words):
+        return None
+    words = [w for w in words if w and w.lower() not in _TITLES]
+    if not words or not _NAME_WORD.match(words[0]) or len(words[0]) < 2:
+        return None
+    word = words[0]
+    if word.isupper() or word.islower():
+        word = re.sub(r"[^\W\d_]+", lambda m: m.group(0).capitalize(), word)
+    return word
 
 
 def _excluded(p: Payment, now: int) -> bool:
@@ -308,7 +353,8 @@ def anniversary(f: Facts) -> list[Candidate]:
             continue
         sub = max((s for s in f.subs if s.email == a.customer.email and s.current), key=lambda s: s.started)
         why = f"{_times(a.years, 'year')} since their first payment, on {_date(a.date)}"
-        out.append(f.candidate(a.customer.email, sub.account_id, why, sub.plan, a.date))
+        out.append(f.candidate(a.customer.email, sub.account_id, why, sub.plan, a.date,
+                               fields={"years": _times(a.years, "year")}))
     return _by_value(out)
 
 
@@ -351,7 +397,8 @@ def _upgradable(f: Facts, min_renewals: int, fits: Callable[[Subscription], bool
 def founding_upgrade(f: Facts) -> list[Candidate]:
     return _by_value([
         f.candidate(s.email or "", s.account_id,
-                    f"{_times(n, 'renewal')} since {_month(s.started)}, no failed payments", s.plan, s.started)
+                    f"{_times(n, 'renewal')} since {_month(s.started)}, no failed payments", s.plan, s.started,
+                    fields={"renewals": str(n), "since": _long_month(s.started)})
         for s, n in _upgradable(f, FOUNDING_MIN_RENEWALS, lambda s: True)
     ])
 
@@ -359,7 +406,8 @@ def founding_upgrade(f: Facts) -> list[Candidate]:
 def monthly_to_annual(f: Facts) -> list[Candidate]:
     return _by_value([
         f.candidate(s.email or "", s.account_id,
-                    f"Monthly for {_span(f.now - s.started)}, {_times(n, 'renewal')}, no failed payments", s.plan, s.started)
+                    f"Monthly for {_span(f.now - s.started)}, {_times(n, 'renewal')}, no failed payments", s.plan, s.started,
+                    fields={"renewals": str(n), "since": _long_month(s.started)})
         for s, n in _upgradable(f, ANNUAL_MIN_RENEWALS, is_monthly)
         if not any(is_yearly(o) for o in f.staying[s.email or ""])
     ])
@@ -390,14 +438,15 @@ def cross_sell(f: Facts, source: RevenueSource) -> list[Candidate]:
             n = f.renewals.get((email, s.account_id), 0)
             if email not in buyers and n >= EXPENSIVE_MIN_RENEWALS:
                 why = f"#{f.rank_of[email]} by lifetime take-home, {_times(n, 'renewal')}" if email in f.rank_of else f"{_times(n, 'renewal')}"
-                out.append(f.candidate(email, s.account_id, why, s.plan, s.started))
+                out.append(f.candidate(email, s.account_id, why, s.plan, s.started, fields={"since": _long_month(s.started)}))
             if len(out) >= EXPENSIVE_TOP:
                 break
     elif tier == "cheap":
         for email in f.staying:
             s = min(f.staying[email], key=lambda s: s.started)
             if email not in buyers and s.started <= f.now - CHEAP_MIN_DAYS * DAY:
-                out.append(f.candidate(email, s.account_id, f"Paid subscriber since {_month(s.started)}", s.plan, s.started))
+                out.append(f.candidate(email, s.account_id, f"Paid subscriber since {_month(s.started)}", s.plan, s.started,
+                                       fields={"since": _long_month(s.started)}))
     else:
         for email in f.staying:
             for s in f.staying[email]:
@@ -409,7 +458,7 @@ def cross_sell(f: Facts, source: RevenueSource) -> list[Candidate]:
                     why = f"Annual subscriber for {_span(f.now - s.started)}"
                 else:
                     continue
-                out.append(f.candidate(email, s.account_id, why, s.plan, s.started))
+                out.append(f.candidate(email, s.account_id, why, s.plan, s.started, fields={"since": _long_month(s.started)}))
     return _by_value(out)
 
 
@@ -419,7 +468,8 @@ def repeat_booking(f: Facts, source: RevenueSource) -> list[Candidate]:
         last = bought[-1]
         if last.created <= f.now - REPEAT_IDLE_DAYS * DAY:
             why = f"Bought {_times(len(bought), 'time')}, last {_ago(last.created, f.now)}"
-            out.append(f.candidate(email, last.account_id, why, last.description, last.created))
+            out.append(f.candidate(email, last.account_id, why, last.description, last.created,
+                                   fields={"last": _ago(last.created, f.now)}))
     return _by_value(out)
 
 
@@ -445,7 +495,8 @@ def _at_risk(f: Facts, kinds: set[str]) -> list[Candidate]:
         if r.kind not in kinds or (r.kind, r.email) in seen:
             continue
         seen.add((r.kind, r.email))
-        out.append(f.candidate(r.email, r.account_id, _risk_why(r, f.now), r.plan, r.since, r.deadline))
+        fields = {"ends": _long_date(r.deadline)} if r.kind == "canceling" and r.deadline else {}
+        out.append(f.candidate(r.email, r.account_id, _risk_why(r, f.now), r.plan, r.since, r.deadline, fields))
     return out
 
 

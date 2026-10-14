@@ -91,6 +91,7 @@ class Payment:
     dispute: Dispute | None = None
     # The Connect application that created the payment (e.g. Substack's, or a course platform's); None: made directly.
     application: str | None = None
+    name: str | None = None  # the customer record's name, when that record is whose email this is
     # In the reporting currency. None until converted, or if no FX rate was available.
     gross_reporting: int | None = None
     net_reporting: int | None = None
@@ -159,6 +160,15 @@ def resolve_email(pi: dict, invoice: dict | None) -> str | None:
     )
 
 
+def customer_name(customer: object, email: str | None) -> str | None:
+    """The name on the customer record, only when the record is the one the email came from. Never the
+    cardholder's name: that can be someone else's (a partner's card, a gift)."""
+    if not isinstance(customer, dict) or email is None or _first(customer.get("email")) != email:
+        return None
+    name = customer.get("name")
+    return name.strip() or None if isinstance(name, str) else None
+
+
 def _status(pi: dict) -> Status | None:
     """None for PaymentIntents the customer never attempted (e.g. an abandoned checkout)."""
     s = pi["status"]
@@ -181,7 +191,7 @@ def _truncate(text: str | None) -> str | None:
 # Stripe's invoice line for a subscription: "1 × <product name> (at <price> / <interval>)".
 _PLAN_LINE = re.compile(r"^(?:(\d+) × )?(.+?) \(at .+ / (.+)\)$")
 # Product names that are really a price, e.g. Substack's "$8 a month". They can disagree with the
-# actual price (here, CA$12.00 a month), so they're dropped in favour of the billing interval.
+# actual price (here, CA$12.00 a month), so they're dropped in favor of the billing interval.
 _PRICE_LIKE = re.compile(r"[$€£¥₹]|\d+(?:[.,]\d+)?\s*(?:a|per|/)\s*(?:day|week|month|year)", re.IGNORECASE)
 _INTERVALS = {
     "day": ("Daily", ("day", "daily")),
@@ -272,6 +282,7 @@ def normalize_payment(pi: dict, invoice: dict | None, account_id: str) -> Paymen
         settled_fees=settled[3],
         dispute=_dispute(charge) if collected else None,
         application=_id(pi.get("application")) or _id(charge.get("application")),
+        name=customer_name(pi.get("customer"), resolve_email(pi, invoice)),
     )
 
 
@@ -347,7 +358,7 @@ def apply_reporting_currency(
         net = gross - (round(gross * p.amount_refunded / p.amount) if p.amount else 0)
         fees = tuple(replace(f, amount=conv(f.amount)) for f in p.settled_fees)
         # Dispute movements are dated later, but converting at the payment's rate keeps a
-        # won dispute's withdrawal and return cancelling out exactly.
+        # won dispute's withdrawal and return canceling out exactly.
         dispute = tuple(
             replace(m, amount=conv(m.amount), fee=conv(m.fee)) for m in (p.dispute.movements if p.dispute else ())
         )
@@ -558,6 +569,7 @@ class Subscription:
     price_currency: str | None = None
     interval: str | None = None  # day, week, month or year
     interval_count: int | None = None  # e.g. 3 with "month": billed every 3 months
+    name: str | None = None  # the customer record's name, when that record is whose email this is
 
     @property
     def current(self) -> bool:
@@ -620,6 +632,8 @@ def normalize_subscription(sub: dict, account_id: str) -> Subscription:
         price_currency=price.get("currency"),
         interval=recurring.get("interval"),
         interval_count=recurring.get("interval_count"),
+        name=customer_name(customer, _first(customer.get("email") if isinstance(customer, dict) else None,
+                                             invoice.get("customer_email"))),
     )
 
 

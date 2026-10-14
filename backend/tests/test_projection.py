@@ -100,9 +100,20 @@ def test_prices_and_application_are_kept():
     }
     stored = project("subscription", make_subscription(items={"data": [{"id": "si_1", "price": price}]}), KEY)
     assert stored["items"]["data"][0]["price"] == {
-        "id": "price_1", "nickname": "Founding", "unit_amount": 15000, "currency": "usd",
-        "recurring": {"interval": "year", "interval_count": 1},
+        "id": "price_1", "nickname": "Founding", "unit_amount": 15000, "currency": "usd", "product": "prod_1",
+        "recurring": {"interval": "year", "interval_count": 1, "usage_type": "licensed"},
     }
     pi = make_pi(application={"id": "ca_substack", "name": "Substack"}, latest_charge=make_charge(application="ca_substack"))
     stored = project("payment_intent", pi, KEY)
     assert (stored["application"], stored["latest_charge"]["application"]) == ("ca_substack", "ca_substack")
+
+
+def test_names_are_encrypted_and_cardholders_never_kept():
+    customer = SENSITIVE_CUSTOMER | {"name": "Ada Lovelace"}
+    stored = project("customer", customer, KEY)
+    assert stored["name"].startswith(SEALED_PREFIX) and "Ada" not in json.dumps(stored)
+    assert unseal(stored, KEY)["name"] == "Ada Lovelace"
+
+    charge = project("payment_intent", make_pi(), KEY)["latest_charge"]
+    assert charge["payment_method_details"] == {"type": "card", "card": {"brand": "visa"}}
+    assert "name" not in charge["billing_details"]  # the cardholder's name is never kept

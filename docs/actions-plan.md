@@ -2,7 +2,7 @@
 
 ## Context
 
-Stoke shows a writer who their customers are, but it doesn't help them act on it. v1 adds a library of **actions**. Each action says who to reach out to and why, and offers a note in the writer's voice. The writer approves the note. Stoke then sends it from their Gmail after a 24-hour window in which they can cancel. Stoke tracks who's been contacted and who converted, and emails a weekly digest that brings the writer back. It's built directly as v1 for a small beta: up to 100 Google test users while Gmail verification runs.
+Stoke shows a writer who their customers are, but it doesn't help them act on it. v1 adds a library of **actions**. Each action says who to reach out to and why, and offers a note template the writer writes and approves once. Stoke then sends it from their Gmail after a 24-hour window in which they can cancel. Stoke tracks who's been contacted and who converted, and emails a weekly digest that brings the writer back. It's built directly as v1 for a small beta: up to 100 Google test users while Gmail verification runs.
 
 ## Current state (2026-10-13)
 
@@ -13,37 +13,48 @@ Stoke shows a writer who their customers are, but it doesn't help them act on it
 - `sync.run_worker()` runs imports and re-reads inside the web process (started in the `main.py` lifespan, behind the `sync_worker` setting).
 - `fetch.py` and `service.*` read the stored objects. While an account's first import runs, views answer `importing` and the UI shows `ImportProgress.tsx`.
 
-**Analytics:** the Overview (with trend charts), and tabs at `/analytics/<tab>` (top, new, anniversaries, cancellations, at-risk) from `frontend/src/analyticsTabs.tsx`. The older top-level URLs already redirect there (`MovedToAnalytics` in `App.tsx`).
+**Analytics:** the Overview (with trend charts) and Top customers (`/analytics/top`). The other analytics lists became action pages in step 2.
 
-**Step 1 (the writer's links) is built but not yet committed:**
+**Step 1 (the writer's links), committed:**
 - Backend: `0003_writer_links.py`, `WriterLink` in `db_models.py`, `app/links.py` (user scoping, a cap of 50, and a check that "paid through" is one of the writer's accounts), `LinkIn` / `LinkOut` / `LINK_KINDS` in `models.py`, and `/api/links` CRUD in `routers/settings.py`.
 - Frontend: `pages/SettingsLinks.tsx` and `linkKinds.ts`.
 - Tests: `tests/test_links.py`.
 - Also `dev.sh`, which starts Postgres, migrations, the API and the frontend locally.
 
-**Step 2 (action audiences) is built but not yet committed:**
-- `projection.py` keeps each subscription's price (id, amount, currency, interval) and each payment's `application`, at `PROJECTION_REV = 2`. Run `scripts/resync.py` after deploying; until an account's re-import finishes, upgrade audiences fall back to plan names.
+**Step 2 (action audiences), committed:**
+- `projection.py` keeps each subscription's price (id, amount, currency, interval) and each payment's `application` (`PROJECTION_REV = 2`; now 3, see step 4). Run `scripts/resync.py` after deploying; until an account's re-import finishes, upgrade audiences fall back to plan names.
 - `app/actions.py` has the twelve rules, with thresholds as module constants. `GET /api/actions` and `GET /api/actions/{kind}` are in `routers/actions.py`.
 - The frontend adds `pages/Actions.tsx`, `pages/Action.tsx` and `actionTypes.ts`. The nav is Overview · Actions · Top customers · Settings. The New customers, Anniversaries, Cancellations and At risk pages are gone, and their old URLs redirect to Welcome, Anniversary thank-you, Win-back and the retention actions. The Overview cards still show the old lists' data, but link to the actions.
 - Tests: `tests/test_actions.py`, plus cases in `test_projection.py` and `test_response_shape.py`.
 
-**Step 3 (writer profile) is built but not yet committed:**
+**Step 3 (writer profile), committed:**
 - `0004_writer_profiles.py` and `WriterProfile` hold `plan_labels` (price id → standard / founding) and `application_labels` (Connect application id → a revenue source's link id, `newsletter` or `other`). The profile's other columns arrive with the steps that use them.
 - `app/profile.py` loads and saves the labels, and lists the plans and payment sources with Stoke's guesses. A source's platform name comes from its application fee's label (e.g. "Substack application fee").
 - API: `GET /api/plans`, `PUT /api/plans/{id}`, `GET /api/payment-sources` and `PUT /api/payment-sources/{id}`. Prices and applications are referred to by opaque ids (`customer_id.ref_id`), so Stripe ids never leave the backend.
-- In `app/actions.py`, a labelled price overrides the Founding guess. A revenue source with confirmed applications finds its buyers (for Cross-sell and Repeat booking) from those applications, on any account, and no longer needs "paid through". Payments from an application labelled `newsletter` (e.g. Substack gift subscriptions) never count as revenue-source sales.
+- In `app/actions.py`, a labeled price overrides the Founding guess. A revenue source with confirmed applications finds its buyers (for Cross-sell and Repeat booking) from those applications, on any account, and no longer needs "paid through". Payments from an application labeled `newsletter` (e.g. Substack gift subscriptions) never count as revenue-source sales.
 - Settings has two new sections, Your plans and Where payments come from (`pages/SettingsProfile.tsx`). Each row shows Stoke's guess with Confirm, or the confirmed label with "Use Stoke's guess".
 - Tests: `tests/test_profile.py`, plus label cases in `tests/test_actions.py`.
+
+**Step 4 (outreach tracking, without sending) is built but not yet committed:**
+- `0005_actions_outreach.py`: `actions` (`WriterAction`: per writer and kind, on/off, subject and body templates, `approved_at`), created on first change, and `outreach` (one row per writer, action and customer id: status `sent` or `skipped` for now, the subject and body as sent, `sent_at`). The status check already allows `draft`, `approved` and `scheduled` for later steps. Action thresholds (`params`) aren't stored yet.
+- `app/templates.py`: merge fields (`plan`, `substack`, `socials` for every action, plus per-action ones such as `years`, `renewals`, `since`, `link`, `link_name`, `last` and `ends`), a default template per action, validation of unknown fields, and `fill`, which returns the note as parts so filled values can be highlighted. Rules put their per-person values in `Candidate.fields`.
+- `app/outreach.py`: settings, template edits (an edit withdraws approval), recording sent or skipped, undo, history, sent counts and the contacted map.
+- API (`routers/actions.py`): `PATCH /api/actions/{kind}` (enabled, subject, body, approved), `GET /api/actions/{kind}/queue`, `POST /api/actions/{kind}/outreach`, `GET /api/actions/{kind}/outreach`, `GET /api/customers/{id}/outreach`, `DELETE /api/outreach/{id}` and `GET /api/outreach/contacted`. `GET /api/actions` adds `enabled` and `sent`; `GET /api/actions/{kind}` adds the template and its merge fields. Marking needs the action on, its template approved, and the person in its audience.
+- The action page has Turn on / off and four views: Queue (each person's filled note with highlights, Open in email, Copy note, Edit, Mark sent, Skip), Audience, Note (the template editor, with merge fields highlighted as you type and Insert buttons) and Contacted (sent and skipped, with Undo). "Contacted Nd ago" chips (amber within 14 days) are on the queue, the audience, Top customers, the Overview cards and the customer profile, which also lists the customer's notes.
+- Names: `{{first_name}}` comes from the name on the Stripe customer record, only when that record is the one the email came from, never the cardholder's name. `actions.first_name` keeps a first word that looks like a person's name ("ADA LOVELACE" → "Ada"; titles skipped; company names, digits and emails rejected). A field can have its own fallback (`MergeField.fallback` in `app/templates.py`, "there" for `first_name`), used for anyone with no value and highlighted differently in the queue. Writers never see fallbacks: the editor shows fields as tags. A fallback written into a template, `{{first_name|friend}}`, still overrides the field's (older saved templates have them).
+- Notes are stored encrypted: `outreach.note_*` holds the subject and body as JSON, sealed with the same envelope encryption as Stripe keys (`app/crypto.py`).
+- A person is contacted once per action, by the unique constraint.
+- `PROJECTION_REV = 3` keeps customer names (sealed, like emails) and a wider set of non-personal fields for future analytics: discounts and coupons, invoice totals, periods and status transitions, line quantities and prices, trial, pause and period dates on subscriptions, payment method type and card brand, funding and issuing country (never last4, fingerprint, expiry or cardholder), charge outcomes and risk, decline codes, refund reasons, dispute evidence status (not the evidence), and customer currency, delinquency and preferred locales. Run `scripts/resync.py` after deploying.
+- Tests: `tests/test_templates.py`, `tests/test_outreach.py`.
 
 ## Product decisions
 
 **Action library.** Every action is listed. Each action's page shows analytics for its audience, whether or not the action is on. Turning an action on adds its outreach queue.
 
-**Voice.**
-- The writer's Substack URL (from Settings → Audience channels) gives Stoke the public RSS feed, `<handle>.substack.com/feed` or `<domain>/feed`.
-- From the feed, AI writes a voice guide that the writer can edit.
-- For each action, AI drafts one template, which the writer edits and approves.
-- Per-person notes fill merge fields deterministically, and the filled fields are highlighted. No AI text is ever written per person.
+**Templates.**
+- Each action starts from a default template that Stoke ships. The writer edits it in the action page's editor and approves it.
+- Per-person notes fill merge fields deterministically, and the filled fields are highlighted. No per-person text is generated.
+- AI voice (a voice guide from the Substack RSS feed, and AI-drafted templates) is out of scope for now.
 
 **First run of an action:**
 1. The writer approves the template.
@@ -108,7 +119,7 @@ Audited for Substack writers:
 With no revenue sources saved, the library shows "Add a revenue stream in Settings" in place of #7 and #8.
 
 **Dispute check-in (#12):**
-- Many disputes are really "I couldn't cancel" or "I didn't recognise the charge", and Stripe recommends contacting the customer.
+- Many disputes are really "I couldn't cancel" or "I didn't recognize the charge", and Stripe recommends contacting the customer.
 - The page reminds the writer to still submit evidence in Stripe before the deadline. A customer withdrawing through their bank isn't guaranteed or instant.
 - The tone is never accusatory.
 - The stored projection already has what this needs (dispute status, reason and `evidence_details.due_by`), as do the refund exclusions.
@@ -126,14 +137,14 @@ With no revenue sources saved, the library shows "Add a revenue stream in Settin
 - **Upgrade**: Founding → a Founding plan; Monthly → annual → a yearly interval.
 - **Cross-sell**: a purchase of that revenue source, through its Stripe account.
 - **Win-back**: a resubscribe.
-- **Retention**: the subscription is still active after its end date, or a retry succeeded. For Dispute check-in, the dispute closed in the writer's favour.
+- **Retention**: the subscription is still active after its end date, or a retry succeeded. For Dispute check-in, the dispute closed in the writer's favor.
 
 ## Implementation outline
 
 ### Data
 Alembic migrations, with models in `backend/app/db_models.py`. `0001`–`0003` exist; new tables start at `0004`.
 - **`writer_links`** (step 1, `0003_writer_links.py`): category (revenue_source / social), kind, name, url, paid-through account, purchase (once / repeat / subscription), position.
-- **`writer_profiles`** (`0004_writer_profiles.py`): plan labels and application labels (step 3). Later migrations add display name, sign-off, voice guide, timezone, daily cap, paused and digest on/off with the steps that use them.
+- **`writer_profiles`** (`0004_writer_profiles.py`): plan labels and application labels (step 3). Later migrations add display name, sign-off, timezone, daily cap, paused and digest on/off with the steps that use them.
 - **`actions`** and **`outreach`** (`0005_actions_outreach.py`).
   - **`actions`**: kind, type, enabled, params (JSONB), subject/body template, template `approved_at`, and an optional `link_id` (for Cross-sell actions).
   - **`outreach`**: action_id, customer_id (HMAC from `backend/app/customer_id.py`; no email is stored), status, subject/body as sent, scheduled_for, sent_at, Gmail message/thread id, converted_at. Unique on (user, action, customer).
@@ -143,14 +154,12 @@ Alembic migrations, with models in `backend/app/db_models.py`. `0001`–`0003` e
 ### Backend
 - **`app/links.py`** + `/api/links` (step 1, built): CRUD for the writer's links.
 - **`app/actions.py`**: pure audience rules over the existing aggregates (`aggregate.rank_customers`, `cancellations`, `anniversaries`, `new_customers`, `at_risk`, and the timeline's `subscription_changed` / `purchased` events). Each candidate carries a "why" string, and each type defines its conversion check.
-- **`app/voice.py`**: RSS fetch → voice guide, and template drafting (Claude API, latest model). Only fields allowlisted in `models.py` are sent to the LLM.
+- **`app/templates.py`** and **`app/outreach.py`** (step 4, built): merge fields, default templates and filling; action settings and recorded notes.
 - **`app/gmail.py`**: the OAuth flow, token refresh, and sending (an RFC 822 message via `users.messages.send`).
 - **`app/routers/actions.py`**:
-  - actions CRUD;
-  - `GET /actions/{id}/audience` (analytics, which works while the action is off);
-  - the queue, with approve / edit / cancel for outreach;
-  - pause all;
-  - per-customer outreach history.
+  - the library and each action's audience, which works while the action is off (step 2);
+  - action settings, the queue, marking sent or skipped, undo, and per-action and per-customer history (step 4);
+  - later: scheduling, cancel / edit of scheduled notes, and pause all.
 - **`app/jobs/send.py`** (every 15 minutes):
   - sends scheduled notes that are due, enforcing caps, pause and exclusions;
   - re-resolves the email at send time with `customer_id.resolve(cid, emails)`, over the emails in the stored objects;
@@ -162,7 +171,7 @@ Alembic migrations, with models in `backend/app/db_models.py`. `0001`–`0003` e
   - Jobs build `CurrentUser` from the database and read stored data through `service.*` / `fetch.*`. They skip accounts whose import isn't finished.
 
 ### Frontend
-- **Settings** (step 1): Your channels: Revenue streams and Audience channels. Later: voice guide, plan labels, Connect Gmail, caps, pause.
+- **Settings**: Revenue streams and Audience channels (step 1); Your plans and Where payments come from (step 3). Later: Connect Gmail, caps, pause.
 - **`pages/Actions.tsx`**: the action library, grouped by type (audience size, on/off, sent/converted).
 - **`pages/Action.tsx`**:
   - audience analytics with "why this person";
@@ -175,26 +184,25 @@ Alembic migrations, with models in `backend/app/db_models.py`. `0001`–`0003` e
 
 Each step ships on its own, is useful by itself, and is one reviewable PR.
 
-1. **Settings: the writer's links.** *Built, awaiting its PR* (the uncommitted files listed under Current state). The `writer_links` table and the two Settings sections. This unlocks the Cross-sell actions and gives social links to the gratitude actions.
-2. **Action audiences (read-only).** *Built, awaiting its PR.*
+1. **Settings: the writer's links.** *Done.* The `writer_links` table and the two Settings sections. This unlocks the Cross-sell actions and gives social links to the gratitude actions.
+2. **Action audiences (read-only).** *Done.*
    - `app/actions.py` rules with "why" strings, `GET /actions` and `/actions/{kind}`.
    - The library page grouped by type, and an action page per action, replacing the analytics pages.
    - The projection change (see Data): the subscription price and the payment's `application`, in one `PROJECTION_REV` bump and resync. It serves the Founding and Monthly → annual audiences now, and step 3's auto-detection.
    - No new tables. Value: writers see who to reach out to.
-3. **Writer profile.** *Built, awaiting its PR.* `0004_writer_profiles`. Plan labels (standard / Founding), and Stripe application auto-detection with confirmation (using the `application` stored in step 2), which makes the upgrade and cross-sell audiences accurate.
-4. **Outreach tracking, without sending.**
-   - The `actions` and `outreach` migration (`0005`), and hand-written templates with merge fields.
+3. **Writer profile.** *Done.* `0004_writer_profiles`. Plan labels (standard / Founding), and Stripe application auto-detection with confirmation (using the `application` stored in step 2), which makes the upgrade and cross-sell audiences accurate.
+4. **Outreach tracking, without sending.** *Built, awaiting its PR.*
+   - The `actions` and `outreach` migration (`0005`), and templates with merge fields, written and approved in the action page.
    - A queue with preview, copy and "mark sent", plus "Contacted Nd ago" chips everywhere.
    - This proves the workflow and tracking before any integration.
-5. **AI voice.** RSS → an editable voice guide. AI drafts each action's template, and the writer edits and approves it.
-6. **Gmail send.**
+5. **Gmail send.**
    - `0006_gmail_connections`. OAuth (`gmail.send`), an encrypted refresh token, test-to-self, and sending from the queue.
    - Submit Google's verification (privacy policy, domain, demo video) now, because it has a long lead time. The beta is limited to 100 test users until it's approved.
-7. **Scheduling and guardrails.** The 24-hour window, the send loop in the worker, the daily cap, the 14-day rule, dispute/refund exclusions, and pause-all.
-8. **Conversion detection.** Per-type conversion checks run by the send loop, sent → converted, and the results on the library and action pages.
-9. **Weekly digest.** A transactional ESP and a weekly loop in the worker: new audience members, sent, converted, and upcoming scheduled notes with Review / Pause links.
+6. **Scheduling and guardrails.** The 24-hour window, the send loop in the worker, the daily cap, the 14-day rule, dispute/refund exclusions, and pause-all.
+7. **Conversion detection.** Per-type conversion checks run by the send loop, sent → converted, and the results on the library and action pages.
+8. **Weekly digest.** A transactional ESP and a weekly loop in the worker: new audience members, sent, converted, and upcoming scheduled notes with Review / Pause links.
 
-Order: 1 → 2 → 3 → 4 → 5/6 (in parallel) → 7 → 8 → 9. A simple digest of audience counts could ship right after step 2 if re-engagement matters sooner.
+Order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. A simple digest of audience counts could ship right after step 2 if re-engagement matters sooner.
 
 ## Verification
 

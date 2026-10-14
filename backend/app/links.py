@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import credentials
 from app.actions import RevenueSource
 from app.auth import CurrentUser
+from app.templates import Social
 from app.db_models import WriterLink, credential_account_id
 from app.models import LinkIn
 
@@ -33,10 +34,19 @@ async def revenue_sources(session: AsyncSession, user: CurrentUser) -> list[Reve
     return [
         RevenueSource(
             id=str(link.id), kind=link.kind, name=link.name or link.kind, purchase=link.purchase or "once",
-            paid_via_account_id=link.paid_via_account_id,
+            paid_via_account_id=link.paid_via_account_id, url=link.url,
         )
         for link in await list_for_user(session, user)
         if link.category == "revenue_source"
+    ]
+
+
+async def socials(session: AsyncSession, user: CurrentUser) -> list[Social]:
+    """The writer's audience channels, as notes link to them."""
+    return [
+        Social(kind=link.kind, name=link.name, url=link.url)
+        for link in await list_for_user(session, user)
+        if link.category == "social"
     ]
 
 

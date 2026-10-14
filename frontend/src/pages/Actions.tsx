@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router'
 import { api, type Action } from '../api'
 import { ACTION_TYPES, actionPath } from '../actionTypes'
+import { Chip } from '../components/Chip'
 import { ListToolbar } from '../components/ListToolbar'
 import { useListParams, useRefreshableQuery } from '../useListView'
 
@@ -72,6 +73,12 @@ function ActionCard({ action: a }: { action: Action }) {
         )}
       </header>
       <p className="muted small">{a.unavailable ?? a.rule}</p>
+      {(a.enabled || a.sent > 0) && (
+        <p className="action-card-status small">
+          {a.enabled ? <Chip tone="ok">On</Chip> : <Chip>Off</Chip>}
+          {a.sent > 0 && <span className="muted">{a.sent} sent</span>}
+        </p>
+      )}
     </Link>
   )
 }

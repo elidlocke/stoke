@@ -185,9 +185,60 @@ class WriterProfile(Base):
     __tablename__ = "writer_profiles"
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    # Stripe price id -> standard | founding. Unlabelled prices are guessed (see app/actions.py).
+    # Stripe price id -> standard | founding. Unlabeled prices are guessed (see app/actions.py).
     plan_labels: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
     # Connect application id -> what its payments are: a revenue source (a WriterLink id), "newsletter", or "other".
     application_labels: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WriterAction(Base):
+    """A writer's settings for one action: on or off, and its note template. Created on first change."""
+
+    __tablename__ = "actions"
+    __table_args__ = (UniqueConstraint("user_id", "kind"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(Text)  # e.g. welcome, cross-sell-<link id> (app/actions.py)
+    enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # The note template, with {{merge fields}}; None: the default (app/templates.py).
+    subject: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str | None] = mapped_column(Text)
+    # When the writer approved the template as it is now. Editing it clears this.
+    approved_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class Outreach(Base):
+    """One note to one person for one action. Identifies them only by their opaque customer id. The note
+    itself is encrypted like a Stripe key: it can hold their first name."""
+
+    __tablename__ = "outreach"
+    __table_args__ = (UniqueConstraint("user_id", "action_id", "customer_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    action_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"))
+    customer_id: Mapped[str] = mapped_column(String(24), index=True)  # app/customer_id.py; never the email
+    # draft -> approved -> scheduled -> sent (later steps); skipped: left out by the writer.
+    status: Mapped[str] = mapped_column(Text)
+    # The subject and body as sent, as JSON, sealed with envelope encryption (app/crypto.py).
+    note_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    note_wrapped_dek: Mapped[bytes] = mapped_column(LargeBinary)
+    note_cipher: Mapped[str] = mapped_column(Text)
+    scheduled_for: Mapped[datetime | None]
+    sent_at: Mapped[datetime | None]
+    converted_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    @property
+    def aad(self) -> str:
+        """Associated data binding the encrypted note to this record and its owner."""
+        return f"outreach:{self.user_id}:{self.id}"
+
+    @property
+    def sealed_note(self) -> Sealed:
+        return Sealed(ciphertext=self.note_ciphertext, wrapped_dek=self.note_wrapped_dek, cipher=self.note_cipher)

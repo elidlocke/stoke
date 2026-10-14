@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 
-from app import actions
+import pytest
+
+from app import actions, aggregate
 from app.actions import DAY, RevenueSource
-from app.aggregate import Dispute, Payment, Refund, Subscription, normalize_subscription
-from tests.conftest import make_subscription
+from app.aggregate import Dispute, Payment, Refund, Subscription, normalize_payment, normalize_subscription
+from tests.conftest import make_pi, make_subscription
 
 NOW = int(datetime(2026, 10, 13, 12, tzinfo=UTC).timestamp())
 
@@ -261,3 +263,30 @@ def test_newsletter_payments_are_not_revenue_source_sales():
     assert emails(run(gift, [], [call])["repeat-booking-call"]) == ["gifter@x.com"]
     labels = actions.Labels(applications={"ca_substack": actions.NEWSLETTER})
     assert emails(run(gift, [], [call], labels=labels)["repeat-booking-call"]) == []
+
+
+
+@pytest.mark.parametrize("name, first", [
+    ("ADA LOVELACE", "Ada"), ("Dr. Grace Hopper", "Grace"), ("mary-jane watson", "Mary-Jane"), ("o'brien", "O'Brien"),
+    ("Zoë Kravitz", "Zoë"), ("jean-luc PICARD", "Jean-Luc"), ("McKenzie Smith", "McKenzie"),
+    ("Acme Ltd", None), ("Studio 54", None), ("info@x.com", None), ("J", None), ("  ", None), (None, None),
+])
+def test_first_name(name, first):
+    assert actions.first_name(name) == first
+
+
+def test_names_come_only_from_the_customer_record_the_email_is_from():
+    customer = {"id": "cus_1", "email": "Ada@Example.com", "name": "Ada Lovelace"}
+    assert aggregate.customer_name(customer, "ada@example.com") == "Ada Lovelace"
+    assert aggregate.customer_name(customer, "someone-else@example.com") is None  # e.g. the invoice's snapshot
+    assert aggregate.customer_name("cus_1", "ada@example.com") is None  # not expanded
+
+    pi = make_pi(customer=customer)  # its card says "Ada Lovelace" too, but that's never used
+    assert normalize_payment(pi, None, "acct_a").name == "Ada Lovelace"
+    assert normalize_payment(make_pi(), None, "acct_a").name is None  # no name on the record: not the cardholder's
+
+
+def test_candidates_carry_their_first_name():
+    payments = [pay("new@x.com", 5, "subscription_create", name="JANE DOE")]
+    [c] = run(payments, [sub("new@x.com", 5)])["welcome"].candidates
+    assert c.fields["first_name"] == "Jane"

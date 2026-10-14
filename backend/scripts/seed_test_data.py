@@ -75,8 +75,8 @@ class Seeder:
             "recurring": {"interval": interval},
         }).id
 
-    def customer(self, email, card=GOOD_CARD) -> str:
-        cus = self.c.v1.customers.create({"email": email})
+    def customer(self, name, email, card=GOOD_CARD) -> str:
+        cus = self.c.v1.customers.create({"name": name, "email": email})
         self.set_card(cus.id, card)
         return cus.id
 
@@ -152,19 +152,19 @@ class Seeder:
 
     def subscriber(self):
         """Subscribed monthly."""
-        self.subscribe(self.customer("subscriber@example.com"), "monthly")
+        self.subscribe(self.customer("Maya Patel", "subscriber@example.com"), "monthly")
 
     def annual(self):
         """Subscribed annually."""
-        self.subscribe(self.customer("annual@example.com"), "annual")
+        self.subscribe(self.customer("James Okafor", "annual@example.com"), "annual")
 
     def founding(self):
         """Founding member: the top tier."""
-        self.subscribe(self.customer("founding@example.com"), "founding")
+        self.subscribe(self.customer("Eleanor Whitfield", "founding@example.com"), "founding")
 
     def upgraded(self):
         """Started monthly, then upgraded to annual (a "Changed plan" event)."""
-        sub = self.subscribe(self.customer("upgraded@example.com"), "monthly")
+        sub = self.subscribe(self.customer("Diego Ramirez", "upgraded@example.com"), "monthly")
         self.c.v1.subscriptions.update(sub.id, {
             "items": [{"id": sub["items"].data[0].id, "price": self.prices["annual"]}],
             "proration_behavior": "always_invoice",
@@ -172,7 +172,7 @@ class Seeder:
 
     def recovered(self):
         """First payment declined 3 times, then succeeded after the reader updated their card."""
-        cus = self.customer("recovered@example.com", card=FAILING_CARD)
+        cus = self.customer("Priya Shah", "recovered@example.com", card=FAILING_CARD)
         invoice = self.subscribe(cus, "monthly").latest_invoice
         self.retry(invoice)
         self.retry(invoice)
@@ -180,67 +180,67 @@ class Seeder:
 
     def churned(self):
         """Payment declined 3 times and never recovered."""
-        invoice = self.subscribe(self.customer("churned@example.com", card=FAILING_CARD), "monthly").latest_invoice
+        invoice = self.subscribe(self.customer("Tom Becker", "churned@example.com", card=FAILING_CARD), "monthly").latest_invoice
         self.retry(invoice)
         self.retry(invoice)
 
     def refunded(self):
         """Annual subscription, fully refunded."""
-        sub = self.subscribe(self.customer("refunded@example.com"), "annual")
+        sub = self.subscribe(self.customer("Hannah Lindqvist", "refunded@example.com"), "annual")
         self.c.v1.refunds.create({"payment_intent": self.invoice_payment_intent(sub.latest_invoice)})
 
     def partially_refunded(self):
         """Founding member, half refunded."""
-        sub = self.subscribe(self.customer("partial-refund@example.com"), "founding")
+        sub = self.subscribe(self.customer("Marcus Chen", "partial-refund@example.com"), "founding")
         self.c.v1.refunds.create({"payment_intent": self.invoice_payment_intent(sub.latest_invoice), "amount": 7500})
 
     def tipper(self):
         """Monthly subscriber who also tipped and bought a gift subscription (one-off invoices)."""
-        cus = self.customer("tipper@example.com")
+        cus = self.customer("Sofia Rossi", "tipper@example.com")
         self.subscribe(cus, "monthly")
         self.one_off_invoice(cus, "Tip", 500)
         self.one_off_invoice(cus, "Gift subscription (1 year)", 8000)
 
     def foreign_reader(self):
         """Pays in a different currency than the payout currency, so amounts are converted."""
-        self.subscribe(self.customer(f"{self.foreign}-reader@example.com"), "monthly_foreign")
+        self.subscribe(self.customer("Lena Fischer", f"{self.foreign}-reader@example.com"), "monthly_foreign")
 
     def deleted(self):
         """Subscribed, then the customer was deleted: the email survives only on the invoice."""
-        cus = self.customer("deleted@example.com")
+        cus = self.customer("Owen Gallagher", "deleted@example.com")
         self.subscribe(cus, "annual")
         self.c.v1.customers.delete(cus)
 
     def duplicate_email(self):
         """Two customer records with the same email (different case) that should merge into one person."""
-        self.subscribe(self.customer("Two-Records@Example.com"), "monthly")
-        self.subscribe(self.customer("two-records@example.com"), "annual")
+        self.subscribe(self.customer("Grace Kim", "Two-Records@Example.com"), "monthly")
+        self.subscribe(self.customer("Grace Kim", "two-records@example.com"), "annual")
 
-    def cancelled(self):
+    def canceled(self):
         """Subscribed monthly, then canceled right away, saying it was too expensive."""
-        sub = self.subscribe(self.customer("cancelled@example.com"), "monthly")
+        sub = self.subscribe(self.customer("Ben Adeyemi", "canceled@example.com"), "monthly")
         self.c.v1.subscriptions.cancel(sub.id, {"cancellation_details": {"feedback": "too_expensive"}})
 
-    def cancelling(self):
+    def canceling(self):
         """Annual subscriber who canceled at period end, so is still active until the year is up."""
-        sub = self.subscribe(self.customer("cancelling@example.com"), "annual")
+        sub = self.subscribe(self.customer("Clara Moreau", "canceling@example.com"), "annual")
         self.c.v1.subscriptions.update(sub.id, {
             "cancel_at_period_end": True, "cancellation_details": {"feedback": "unused"},
         })
 
     def won_back(self):
         """Canceled monthly, then came back on annual: a returning subscriber."""
-        cus = self.customer("won-back@example.com")
+        cus = self.customer("Sam Novak", "won-back@example.com")
         self.c.v1.subscriptions.cancel(self.subscribe(cus, "monthly").id)
         self.subscribe(cus, "annual")
 
     def coaching_client(self):
         """New customer whose first purchase was a one-off paid coaching session, not a subscription."""
-        self.one_off_invoice(self.customer("coaching@example.com"), "1:1 coaching session (60 min)", 15000)
+        self.one_off_invoice(self.customer("Aisha Rahman", "coaching@example.com"), "1:1 coaching session (60 min)", 15000)
 
     def no_invoice(self):
         """Payments made without an invoice: a success, a declined-then-canceled one, and an abandoned one."""
-        cus = self.customer("no-invoice@example.com")
+        cus = self.customer("Leo Martins", "no-invoice@example.com")
         self.payment_intent(cus, 2500, "Merch: tote bag", GOOD_CARD)
         try:
             self.payment_intent(cus, 4000, "Merch: hoodie", INSUFFICIENT_FUNDS_CARD)
@@ -253,59 +253,59 @@ class Seeder:
 
     def refunded_twice(self):
         """Founding member refunded twice: 20.00 as a goodwill credit, later 30.00 more."""
-        pi = self.subscription_payment_intent(self.subscribe(self.customer("refunded-twice@example.com"), "founding"))
+        pi = self.subscription_payment_intent(self.subscribe(self.customer("Nora Sullivan", "refunded-twice@example.com"), "founding"))
         self.c.v1.refunds.create({"payment_intent": pi, "amount": 2000, "reason": "requested_by_customer"})
         self.c.v1.refunds.create({"payment_intent": pi, "amount": 3000, "reason": "requested_by_customer"})
 
     def refunded_tip(self):
         """Monthly subscriber whose one-off tip was refunded (a duplicate), but not the subscription."""
-        cus = self.customer("refunded-tip@example.com")
+        cus = self.customer("Felix Wagner", "refunded-tip@example.com")
         self.subscribe(cus, "monthly")
         tip = self.one_off_invoice(cus, "Tip", 1500)
         self.c.v1.refunds.create({"payment_intent": self.invoice_payment_intent(tip.id), "reason": "duplicate"})
 
     def refund_failed(self):
         """Annual subscriber whose refund failed (e.g. the card was closed): the money stays with the creator."""
-        sub = self.subscribe(self.customer("refund-failed@example.com", card=REFUND_FAILS_CARD), "annual")
+        sub = self.subscribe(self.customer("Ruth Abernathy", "refund-failed@example.com", card=REFUND_FAILS_CARD), "annual")
         self.c.v1.refunds.create({"payment_intent": self.subscription_payment_intent(sub)})
 
     def foreign_refund(self):
         """Pays in a foreign currency and was half refunded, so the refund is converted too."""
-        sub = self.subscribe(self.customer(f"{self.foreign}-refunded@example.com"), "monthly_foreign")
+        sub = self.subscribe(self.customer("Matteo Bianchi", f"{self.foreign}-refunded@example.com"), "monthly_foreign")
         self.c.v1.refunds.create({"payment_intent": self.subscription_payment_intent(sub), "amount": 300})
 
     # ---- disputes ----
 
     def dispute_lost(self):
         """Monthly subscriber disputed the charge as fraud; the creator accepted it (lost): amount and fee withdrawn."""
-        sub = self.subscribe(self.customer("dispute-lost@example.com", card=DISPUTE_FRAUD_CARD), "monthly")
+        sub = self.subscribe(self.customer("Kevin Doyle", "dispute-lost@example.com", card=DISPUTE_FRAUD_CARD), "monthly")
         self.c.v1.disputes.close(self.wait_for_dispute(self.subscription_payment_intent(sub)).id)
 
     def dispute_lost_with_evidence(self):
         """Annual subscriber disputed as "product not received"; the evidence lost."""
-        sub = self.subscribe(self.customer("dispute-lost-evidence@example.com", card=DISPUTE_NOT_RECEIVED_CARD), "annual")
+        sub = self.subscribe(self.customer("Ingrid Larsen", "dispute-lost-evidence@example.com", card=DISPUTE_NOT_RECEIVED_CARD), "annual")
         self.submit_evidence(self.wait_for_dispute(self.subscription_payment_intent(sub)).id, "losing")
 
     def dispute_won(self):
         """Founding member disputed as fraud; the evidence won, so the funds come back (the fee may not)."""
-        sub = self.subscribe(self.customer("dispute-won@example.com", card=DISPUTE_FRAUD_CARD), "founding")
+        sub = self.subscribe(self.customer("Victor Huang", "dispute-won@example.com", card=DISPUTE_FRAUD_CARD), "founding")
         self.submit_evidence(self.wait_for_dispute(self.subscription_payment_intent(sub)).id, "winning")
 
     def dispute_open(self):
         """Annual subscriber with a fraud dispute still awaiting a response: funds withdrawn, outcome unknown."""
-        sub = self.subscribe(self.customer("dispute-open@example.com", card=DISPUTE_FRAUD_CARD), "annual")
+        sub = self.subscribe(self.customer("Zoe Hartman", "dispute-open@example.com", card=DISPUTE_FRAUD_CARD), "annual")
         self.wait_for_dispute(self.subscription_payment_intent(sub))
 
     def dispute_inquiry(self):
         """Monthly subscriber's bank sent an inquiry: a warning, no funds withdrawn yet."""
-        sub = self.subscribe(self.customer("dispute-inquiry@example.com", card=DISPUTE_INQUIRY_CARD), "monthly")
+        sub = self.subscribe(self.customer("Daniel Osei", "dispute-inquiry@example.com", card=DISPUTE_INQUIRY_CARD), "monthly")
         self.wait_for_dispute(self.subscription_payment_intent(sub))
 
     def dispute_one_off(self):
         """One-off purchase without an invoice, disputed as "product not received" and still open."""
         # (A partly refunded charge that's later disputed can't be staged: test cards open the dispute
         # as soon as the charge succeeds, and Stripe refuses refunds on a disputed charge.)
-        cus = self.customer("dispute-one-off@example.com", card=DISPUTE_NOT_RECEIVED_CARD)
+        cus = self.customer("Yuki Tanaka", "dispute-one-off@example.com", card=DISPUTE_NOT_RECEIVED_CARD)
         pi = self.payment_intent(cus, 6000, "Workshop ticket", DISPUTE_NOT_RECEIVED_CARD)
         self.wait_for_dispute(pi.id)
 
@@ -314,7 +314,7 @@ SCENARIOS: list[Callable[[Seeder], None]] = [
     Seeder.subscriber, Seeder.annual, Seeder.founding, Seeder.upgraded,
     Seeder.recovered, Seeder.churned, Seeder.refunded, Seeder.partially_refunded,
     Seeder.tipper, Seeder.foreign_reader, Seeder.deleted, Seeder.duplicate_email, Seeder.no_invoice,
-    Seeder.cancelled, Seeder.cancelling, Seeder.won_back, Seeder.coaching_client,
+    Seeder.canceled, Seeder.canceling, Seeder.won_back, Seeder.coaching_client,
     Seeder.refunded_twice, Seeder.refunded_tip, Seeder.refund_failed, Seeder.foreign_refund,
     Seeder.dispute_lost, Seeder.dispute_lost_with_evidence, Seeder.dispute_won, Seeder.dispute_open,
     Seeder.dispute_inquiry, Seeder.dispute_one_off,

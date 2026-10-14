@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { api, PERIODS } from '../api'
 import { ListToolbar } from '../components/ListToolbar'
+import { ContactedChip } from '../components/ContactedChip'
 import { Money } from '../components/Money'
 import { Segmented } from '../components/Segmented'
 import { formatDate } from '../format'
@@ -64,7 +65,7 @@ export function Leaderboard() {
                     <tr key={c.email}>
                       <td className="rank num">{c.rank}</td>
                       <td>
-                        <Link to={customerPath(c.customer_id)}>{c.email}</Link>
+                        <Link to={customerPath(c.customer_id)}>{c.email}</Link> <ContactedChip customerId={c.customer_id} />
                       </td>
                       <td className="right">
                         <Money amount={c.take_home} currency={board.data.reporting_currency} />

@@ -234,6 +234,8 @@ export interface Action {
   link_id: string | null // cross-sell: the revenue source it points at
   unavailable: string | null // why the audience can't be worked out yet; it's then empty
   audience_size: number
+  enabled: boolean // turned on: its queue is open
+  sent: number // notes marked sent
 }
 
 export interface ActionsResponse {
@@ -252,10 +254,87 @@ export interface AudienceEntry {
   deadline: number | null // retention: next retry, when access ends, or the evidence deadline
 }
 
+export interface MergeField {
+  name: string // used as {{name}}
+  description: string
+  fallback: string | null // used for anyone with no value
+}
+
+export interface NoteTemplate {
+  subject: string // with {{merge fields}}
+  body: string
+  is_default: boolean // Stoke's starting point, not edited yet
+  approved_at: number | null // null: not approved (or edited since)
+}
+
 export interface ActionAudienceResponse {
   reporting_currency: string
   action: Action
   customers: AudienceEntry[] // highest value first; retention: most urgent first
+  template: NoteTemplate
+  fields: MergeField[] // the merge fields this action's template can use
+}
+
+export interface ActionUpdate {
+  enabled?: boolean
+  subject?: string
+  body?: string
+  approved?: boolean // approve the template as saved (after this change), or withdraw approval
+}
+
+/** A note as parts: the writer's own text, and merge-field values (`field` set) to highlight. */
+export interface NotePart {
+  text: string
+  field: string | null
+  fallback: boolean // the person has no value for the field, so its fallback was used
+}
+
+export interface QueueEntry {
+  email: string
+  customer_id: string
+  account_id: string
+  why: string
+  plan: string | null
+  lifetime_value: number
+  deadline: number | null
+  note: { subject: NotePart[]; body: NotePart[]; missing: string[] }
+}
+
+export interface QueueResponse {
+  open: boolean // the action is on and its template approved
+  customers: QueueEntry[] // the audience, minus anyone already marked sent or skipped
+}
+
+export interface PreviewReader {
+  email: string | null // null for the example reader
+  customer_id: string | null
+  why: string | null
+  note: { subject: NotePart[]; body: NotePart[]; missing: string[] }
+}
+
+export interface PreviewResponse {
+  example: boolean // nobody is in the audience, so the note is filled for an example reader
+  readers: PreviewReader[]
+}
+
+export type OutreachStatus = 'draft' | 'approved' | 'scheduled' | 'sent' | 'skipped'
+
+export interface Outreach {
+  id: string
+  action_kind: string
+  action_title: string
+  customer_id: string
+  email: string | null // null if they're no longer in the Stripe data
+  status: OutreachStatus
+  subject: string
+  body: string
+  sent_at: number | null
+  created_at: number
+}
+
+export interface Contacted {
+  sent_at: number // the latest note
+  action_kind: string
 }
 
 // not_started: never read yet; importing: the first import (or a re-import) is running;
@@ -419,6 +498,22 @@ export const api = {
       refresh: refresh ? 'true' : undefined,
     }),
   syncStatus: () => get<SyncStatus>('/api/sync-status'),
+  updateAction: (kind: string, update: ActionUpdate) =>
+    request<void>('PATCH', `/api/actions/${encodeURIComponent(kind)}`, { body: update }),
+  queue: (kind: string, account?: string) =>
+    get<QueueResponse>(`/api/actions/${encodeURIComponent(kind)}/queue`, { account }),
+  previewNote: (kind: string, draft: { subject: string; body: string }, account?: string) =>
+    request<PreviewResponse>('POST', `/api/actions/${encodeURIComponent(kind)}/preview`, { params: { account }, body: draft }),
+  markOutreach: (
+    kind: string,
+    body: { customer_id: string; status: 'sent' | 'skipped'; subject?: string; body?: string },
+  ) => request<Outreach>('POST', `/api/actions/${encodeURIComponent(kind)}/outreach`, { body }),
+  actionOutreach: (kind: string) =>
+    get<{ outreach: Outreach[] }>(`/api/actions/${encodeURIComponent(kind)}/outreach`),
+  customerOutreach: (customerId: string) =>
+    get<{ outreach: Outreach[] }>(`/api/customers/${encodeURIComponent(customerId)}/outreach`),
+  deleteOutreach: (id: string) => request<void>('DELETE', `/api/outreach/${id}`),
+  contacted: () => get<{ contacted: Record<string, Contacted> }>('/api/outreach/contacted'),
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
   me: () => get<{ email: string | null }>('/api/me'),

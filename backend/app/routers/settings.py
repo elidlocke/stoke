@@ -173,7 +173,7 @@ RefPath = Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")]
 
 @router.get("/plans")
 async def list_plans(user: UserDep, session: SessionDep) -> PlansResponse:
-    """The writer's subscription plans, each labelled standard or Founding (confirmed, or Stoke's guess)."""
+    """The writer's subscription plans, each labeled standard or Founding (confirmed, or Stoke's guess)."""
     return await service.plans(user, await profile.labels(session, user))
 
 

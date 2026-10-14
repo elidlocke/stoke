@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { api, type Window } from '../api'
 import { Chip } from '../components/Chip'
+import { ContactedChip } from '../components/ContactedChip'
 import { Money } from '../components/Money'
 import { TrendCharts } from '../components/TrendCharts'
 import { formatRelative, formatYears } from '../format'
@@ -200,7 +201,10 @@ function Row({ customer, children }: { customer: { email: string; customer_id: s
       <Link to={customerPath(customer.customer_id)} className="card-email">
         {customer.email}
       </Link>
-      <span className="card-detail">{children}</span>
+      <span className="card-detail">
+        <ContactedChip customerId={customer.customer_id} />
+        {children}
+      </span>
     </li>
   )
 }

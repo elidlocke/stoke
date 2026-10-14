@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState, type ReactNode } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { api, type CustomerProfile as Profile, type EventKind, type Fee, type TimelineEvent } from '../api'
+import { actionPath } from '../actionTypes'
+import { Chip } from '../components/Chip'
+import { ContactedChip } from '../components/ContactedChip'
 import { Money } from '../components/Money'
 import { formatDate, formatMonth, formatRelative } from '../format'
 import { disputeReason } from '../labels'
@@ -74,6 +77,7 @@ export function CustomerProfile() {
       <BackLink />
       <header className="page-header">
         <h1>{profile.data?.email ?? 'Customer'}</h1>
+        <ContactedChip customerId={customerId} />
       </header>
 
       {profile.isPending && <p className="muted">Reading this customer's history from Stripe…</p>}
@@ -82,6 +86,7 @@ export function CustomerProfile() {
       {profile.data && (
         <>
           <Summary profile={profile.data} />
+          <Notes customerId={customerId} />
 
           {profile.data.timeline.length === 0 ? (
             <p className="muted">No payments yet.</p>
@@ -112,6 +117,32 @@ export function CustomerProfile() {
         </>
       )}
     </>
+  )
+}
+
+/** The notes the writer has sent this customer (or skipped), across actions. */
+function Notes({ customerId }: { customerId: string }) {
+  const notes = useQuery({ queryKey: ['customer-outreach', customerId], queryFn: () => api.customerOutreach(customerId) })
+  const list = notes.data?.outreach ?? []
+  if (list.length === 0) return null
+  return (
+    <section className="customer-notes">
+      <h2>Notes</h2>
+      <ul className="card-list">
+        {list.map((o) => (
+          <li key={o.id}>
+            <span>
+              <Link to={actionPath(o.action_kind)}>{o.action_title}</Link>
+              {o.subject && <span className="muted"> · {o.subject}</span>}
+            </span>
+            <span className="card-detail">
+              {o.status === 'sent' ? <Chip tone="ok">Sent</Chip> : <Chip>Skipped</Chip>}
+              <span className="muted">{formatDate(o.sent_at ?? o.created_at)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

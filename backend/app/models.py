@@ -239,6 +239,8 @@ class ActionOut(_Out):
     link_id: str | None  # cross-sell: the revenue source it points at
     unavailable: str | None  # why the audience can't be worked out yet; it's then empty
     audience_size: int
+    enabled: bool  # turned on: its queue is open
+    sent: int  # notes marked sent
 
 
 class ActionsResponse(_Out):
@@ -257,10 +259,96 @@ class AudienceEntry(_Out):
     deadline: int | None  # retention: next retry, when access ends, or the evidence deadline
 
 
+class MergeFieldOut(_Out):
+    name: str  # used as {{name}}
+    description: str
+    fallback: str | None  # used for anyone with no value
+
+
+class TemplateOut(_Out):
+    subject: str  # with {{merge fields}}
+    body: str
+    is_default: bool  # Stoke's starting point, not edited yet
+    approved_at: int | None  # unix seconds; None: not approved (or edited since)
+
+
 class ActionAudienceResponse(_Out):
     reporting_currency: str
     action: ActionOut
     customers: list[AudienceEntry]  # highest value first; retention: most urgent first
+    template: TemplateOut
+    fields: list[MergeFieldOut]  # the merge fields this action's template can use
+
+
+class NotePart(_Out):
+    text: str
+    field: str | None  # set for a merge field's value, so it can be highlighted
+    fallback: bool  # the person has no value for the field, so its fallback was used
+
+
+class NoteOut(_Out):
+    subject: list[NotePart]
+    body: list[NotePart]
+    missing: list[str]  # merge fields with no value for this person, e.g. substack before it's added
+
+
+class QueueEntry(_Out):
+    email: str  # to address the note; never stored
+    customer_id: str
+    account_id: str
+    why: str
+    plan: str | None
+    lifetime_value: int
+    deadline: int | None
+    note: NoteOut  # the template filled in for them
+
+
+class QueueResponse(_Out):
+    # Open once the action is on and its template approved. The queue is the audience, minus anyone
+    # already marked sent or skipped for this action.
+    open: bool
+    customers: list[QueueEntry]
+
+
+class PreviewReader(_Out):
+    email: str | None  # None for the example reader
+    customer_id: str | None
+    why: str | None
+    note: NoteOut
+
+
+class PreviewResponse(_Out):
+    example: bool  # nobody is in the audience, so the note is filled for an example reader
+    readers: list[PreviewReader]
+
+
+OutreachStatus = Literal["draft", "approved", "scheduled", "sent", "skipped"]
+
+
+class OutreachOut(_Out):
+    id: str
+    action_kind: str
+    action_title: str
+    customer_id: str
+    email: str | None  # looked up from the Stripe data; None if they're no longer in it
+    status: OutreachStatus
+    subject: str
+    body: str
+    sent_at: int | None  # unix seconds
+    created_at: int
+
+
+class OutreachResponse(_Out):
+    outreach: list[OutreachOut]  # newest first
+
+
+class ContactedOut(_Out):
+    sent_at: int  # unix seconds: the latest note
+    action_kind: str
+
+
+class ContactedResponse(_Out):
+    contacted: dict[str, ContactedOut]  # by customer id
 
 
 # not_started: never read yet; importing: the first import (or a re-import) is running;
@@ -441,3 +529,24 @@ class PaymentSourcesResponse(_Out):
 
 class PaymentSourceLabelIn(_In):
     label: str | None = Field(None, max_length=64)  # a revenue source's link id, "newsletter", "other", or None
+
+
+# --- Actions and outreach -------------------------------------------------------------------------
+
+class ActionUpdate(_In):
+    enabled: bool | None = None
+    subject: str | None = Field(None, max_length=300)
+    body: str | None = Field(None, max_length=10_000)
+    approved: bool | None = None  # approve the template as saved (after this change), or withdraw approval
+
+
+class PreviewIn(_In):
+    subject: str = Field("", max_length=300)
+    body: str = Field("", max_length=10_000)
+
+
+class OutreachIn(_In):
+    customer_id: str = Field(pattern=r"^[0-9a-f]{24}$")
+    status: Literal["sent", "skipped"]  # sent: the writer sent it themselves; skipped: left out
+    subject: str = Field("", max_length=300)  # as sent, after any edits
+    body: str = Field("", max_length=10_000)
