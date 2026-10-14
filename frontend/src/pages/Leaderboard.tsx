@@ -20,9 +20,11 @@ export function Leaderboard() {
   return (
     <>
       <header className="page-header">
-        <h1>Top customers</h1>
+        <h1>Paid audience</h1>
         {board.data && (
-          <span className="muted">Take-home in {board.data.reporting_currency.toUpperCase()}: after refunds and fees</span>
+          <span className="muted">
+            Your paying readers, ranked by take-home in {board.data.reporting_currency.toUpperCase()} after refunds and fees
+          </span>
         )}
       </header>
 

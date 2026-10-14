@@ -5,14 +5,14 @@ import { NavLink, Outlet, useMatch, useNavigate } from 'react-router'
 import { ApiError } from '../api'
 import { ImportProgress } from './ImportProgress'
 
+// The brand links to Home.
 const NAV = [
-  { to: '/', label: 'Overview', end: true },
   { to: '/actions', label: 'Actions' },
-  { to: '/analytics/top', label: 'Top customers' },
+  { to: '/analytics/top', label: 'Paid audience' },
   { to: '/settings', label: 'Settings' },
 ]
 
-/** Until the user has added a Stripe key, any view sends them to Settings to add one. */
+/** Until the user has added a Stripe key, any view sends them to Home, which welcomes them and points to Settings. */
 function useNoCredentialsRedirect() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -20,7 +20,8 @@ function useNoCredentialsRedirect() {
     () =>
       queryClient.getQueryCache().subscribe((event) => {
         const error = event.type === 'updated' && event.action.type === 'error' ? event.action.error : null
-        if (error instanceof ApiError && error.code === 'no_credentials') navigate('/settings', { replace: true })
+        if (!(error instanceof ApiError && error.code === 'no_credentials')) return
+        if (window.location.pathname !== '/' && window.location.pathname !== '/settings') navigate('/', { replace: true })
       }),
     [queryClient, navigate],
   )
@@ -61,7 +62,7 @@ export function Layout() {
           </NavLink>
           <nav aria-label="Main">
             {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end}>
+              <NavLink key={n.to} to={n.to}>
                 {n.label}
               </NavLink>
             ))}

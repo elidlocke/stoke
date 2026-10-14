@@ -30,12 +30,15 @@ CustomerPath = Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")]
 
 
 async def _writer(session: AsyncSession, user: CurrentUser) -> service.Writer:
+    t = await outreach.tally(session, user)
     return service.Writer(
         sources=await links.revenue_sources(session, user),
         labels=await profile.labels(session, user),
         socials=await links.socials(session, user),
         settings=await outreach.settings(session, user),
-        sent=await outreach.sent_counts(session, user),
+        sent=t.sent,
+        last_sent=t.last_sent,
+        marked=t.marked,
     )
 
 

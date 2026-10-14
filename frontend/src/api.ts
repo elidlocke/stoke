@@ -236,6 +236,11 @@ export interface Action {
   audience_size: number
   enabled: boolean // turned on: its queue is open
   sent: number // notes marked sent
+  open: boolean // on, with its note template approved: its queue is open
+  to_send: number // open: the audience minus anyone marked sent or skipped; otherwise 0
+  last_sent_at: number | null // the latest note marked sent
+  next_deadline: number | null // the soonest deadline in the audience (retention)
+  example_why: string | null // why the first person is in the audience
 }
 
 export interface ActionsResponse {

@@ -79,6 +79,8 @@ async def test_queue_mark_sent_skip_and_undo(signed_in, stripe_data, api):
     assert (await api.get("/api/actions/welcome/queue")).json() == {"open": False, "customers": []}
 
     await _open_welcome(api)
+    welcome = await _library_entry(api, "welcome")
+    assert (welcome["open"], welcome["to_send"], welcome["sent"], welcome["last_sent_at"]) == (True, 2, 0, None)
     queue = (await api.get("/api/actions/welcome/queue")).json()
     assert queue["open"]
     assert [c["email"] for c in queue["customers"]] == [NEW, NEWER]  # highest value first
@@ -113,11 +115,17 @@ async def test_queue_mark_sent_skip_and_undo(signed_in, stripe_data, api):
     [profile_note] = (await api.get(f"/api/customers/{customer_id(NEW)}/outreach")).json()["outreach"]
     assert profile_note["subject"] == "Thanks!"
 
-    library = {a["kind"]: a for a in (await api.get("/api/actions")).json()["actions"]}
-    assert (library["welcome"]["enabled"], library["welcome"]["sent"]) == (True, 1)
+    welcome = await _library_entry(api, "welcome")
+    assert (welcome["enabled"], welcome["sent"], welcome["to_send"]) == (True, 1, 0)
+    assert welcome["last_sent_at"] == sent["sent_at"]  # the skip after it isn't a send
 
     assert (await api.delete(f"/api/outreach/{skipped['id']}")).status_code == 204
     assert [c["email"] for c in (await api.get("/api/actions/welcome/queue")).json()["customers"]] == [NEWER]
+    assert (await _library_entry(api, "welcome"))["to_send"] == 1
+
+
+async def _library_entry(api, kind):
+    return {a["kind"]: a for a in (await api.get("/api/actions")).json()["actions"]}[kind]
 
 
 async def test_marking_needs_the_action_on_and_approved(signed_in, stripe_data, api):
@@ -125,6 +133,8 @@ async def test_marking_needs_the_action_on_and_approved(signed_in, stripe_data, 
     await api.patch("/api/actions/welcome", json={"enabled": True})
     resp = await api.post("/api/actions/welcome/outreach", json={"customer_id": customer_id(NEW), "status": "sent"})
     assert resp.status_code == 400
+    welcome = await _library_entry(api, "welcome")
+    assert (welcome["enabled"], welcome["open"], welcome["to_send"]) == (True, False, 0)  # not approved yet
 
 
 async def test_missing_values_are_flagged(signed_in, stripe_data, api):

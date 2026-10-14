@@ -61,7 +61,7 @@ function Plans() {
   const list = plans.data?.plans ?? []
   return (
     <section className="settings-section">
-      <h2>Your plans</h2>
+      <h2 id="plans">Your plans</h2>
       <p className="muted lede-small">
         Which of your subscription plans is Founding. Stoke guesses from the plan’s name and price; confirm it so the
         Founding upgrade and VIP actions pick the right people.
@@ -157,7 +157,7 @@ function PaymentSources() {
   const list = sources.data?.sources ?? []
   return (
     <section className="settings-section">
-      <h2>Where payments come from</h2>
+      <h2 id="payments">Where payments come from</h2>
       <p className="muted lede-small">
         Platforms that take payments into your Stripe accounts, such as Substack or a course platform. Say which revenue
         stream each one sells, so Stoke knows exactly who has bought what, and doesn’t pitch it to them again.

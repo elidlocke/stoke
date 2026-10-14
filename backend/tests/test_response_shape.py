@@ -271,6 +271,16 @@ def test_at_risk_shape(client, monkeypatch):
     for c in body["customers"]:
         assert c["customer_id"] == customer_id(c["email"])
 
+    # The library gives each retention action its soonest deadline.
+    async def writer(session, user):
+        return service.Writer(sources=[], labels=Labels(), socials=[], settings={}, sent={})
+
+    monkeypatch.setattr(actions_router, "_writer", writer)
+    by_kind = {a["kind"]: a for a in client.get("/api/actions", params={"account": "acct_conn"}).json()["actions"]}
+    assert by_kind["card-failing"]["next_deadline"] is None  # an open dispute excludes them from it
+    assert by_kind["dispute-check-in"]["next_deadline"] == now + 5 * 86400
+    assert by_kind["save"]["next_deadline"] == now + 9 * 86400
+
 
 def test_trends_shape(client):
     resp = client.get("/api/trends")
@@ -302,6 +312,8 @@ def test_actions_shape(client, monkeypatch):
     assert_clean(resp.text)
     by_kind = {a["kind"]: a for a in resp.json()["actions"]}
     assert by_kind["vip"]["audience_size"] == 1  # a paying, current subscriber
+    assert (by_kind["vip"]["open"], by_kind["vip"]["to_send"], by_kind["vip"]["next_deadline"]) == (False, 0, None)
+    assert by_kind["vip"]["example_why"]
     assert by_kind["cross-sell-11111111-1111-1111-1111-111111111111"]["type"] == "cross_sell"
 
     resp = client.get("/api/actions/vip")

@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, useLocation } from 'react-router'
 import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
@@ -18,6 +19,7 @@ const PERMISSIONS = [
 ]
 
 export function Settings() {
+  useScrollToSection()
   return (
     <>
       <header className="page-header">
@@ -28,6 +30,18 @@ export function Settings() {
       <WriterProfile />
     </>
   )
+}
+
+/** A link from Home (e.g. /settings#plans) scrolls to its section once, after the sections above it have loaded. */
+function useScrollToSection() {
+  const { hash } = useLocation()
+  const idle = useIsFetching() === 0
+  const done = useRef<string | null>(null)
+  useEffect(() => {
+    if (!idle || !hash || done.current === hash) return
+    done.current = hash
+    document.getElementById(hash.slice(1))?.scrollIntoView()
+  }, [idle, hash])
 }
 
 /** Every view reads from the accounts in scope, so any change here refreshes them all. */
@@ -44,9 +58,10 @@ function StripeAccounts() {
     refetchInterval: (q) => (q.state.data?.credentials.some((c) => c.sync_state === 'importing') ? 3000 : false),
   })
   const list = creds.data?.credentials ?? []
+  const { hash } = useLocation()
   return (
     <section className="settings-section">
-      <h2>Stripe accounts</h2>
+      <h2 id="stripe">Stripe accounts</h2>
       <p className="muted lede-small">
         Add a key for each Stripe account you sell through. Stoke only reads from Stripe. Keys are encrypted before
         they're stored and are never shown again, only their last four characters.
@@ -72,6 +87,12 @@ function StripeAccounts() {
         </div>
       )}
       {creds.isSuccess && <AddCredential first={list.length === 0} />}
+      {/* Arriving from the Welcome page: once a key is in, point back to where the actions are. */}
+      {hash === '#stripe' && list.length > 0 && (
+        <p>
+          <Link to="/">Back to Home to see your actions →</Link>
+        </p>
+      )}
     </section>
   )
 }

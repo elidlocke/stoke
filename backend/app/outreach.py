@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,14 +142,30 @@ async def delete(session: AsyncSession, user: CurrentUser, outreach_id: uuid.UUI
     await session.commit()
 
 
-async def sent_counts(session: AsyncSession, user: CurrentUser) -> dict[str, int]:
+@dataclass(frozen=True)
+class Tally:
+    """The writer's recorded notes, by action kind."""
+    sent: dict[str, int]  # notes marked sent
+    last_sent: dict[str, datetime]  # when the latest was sent
+    marked: dict[str, set[str]]  # customer ids marked sent or skipped: no longer in the queue
+
+
+async def tally(session: AsyncSession, user: CurrentUser) -> Tally:
     rows = await session.execute(
-        select(WriterAction.kind, func.count())
-        .join(Outreach, Outreach.action_id == WriterAction.id)
-        .where(WriterAction.user_id == user.id, Outreach.status == "sent")
-        .group_by(WriterAction.kind)
+        select(WriterAction.kind, Outreach.customer_id, Outreach.status, Outreach.sent_at)
+        .join(WriterAction, Outreach.action_id == WriterAction.id)
+        .where(Outreach.user_id == user.id)
     )
-    return {k: n for k, n in rows.all()}
+    sent: dict[str, int] = {}
+    last_sent: dict[str, datetime] = {}
+    marked: dict[str, set[str]] = {}
+    for kind, cid, status, sent_at in rows.all():
+        marked.setdefault(kind, set()).add(cid)
+        if status == "sent":
+            sent[kind] = sent.get(kind, 0) + 1
+            if sent_at is not None and (kind not in last_sent or sent_at > last_sent[kind]):
+                last_sent[kind] = sent_at
+    return Tally(sent=sent, last_sent=last_sent, marked=marked)
 
 
 async def contacted(session: AsyncSession, user: CurrentUser) -> dict[str, tuple[datetime, str]]:

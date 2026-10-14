@@ -1,4 +1,4 @@
-import type { ActionType } from './api'
+import type { Action, ActionType } from './api'
 import type { Tone } from './components/Chip'
 
 // The library's groups, in order.
@@ -16,4 +16,28 @@ export function actionType(type: ActionType) {
 
 export function actionPath(kind: string): string {
   return `/actions/${encodeURIComponent(kind)}`
+}
+
+// A retention deadline this close (or already past) puts its action first.
+const SOON = 3 * 86400
+
+export function isUrgent(a: Action, now = Date.now() / 1000): boolean {
+  return a.type === 'retention' && a.next_deadline !== null && a.next_deadline - now < SOON
+}
+
+/** Whether there's anyone to reach out to: not unavailable, and someone in the audience. */
+export function hasAudience(a: Action): boolean {
+  return !a.unavailable && a.audience_size > 0
+}
+
+function tier(a: Action, now: number): number {
+  if (!hasAudience(a)) return 3
+  if (isUrgent(a, now)) return 0
+  if (a.type === 'upgrade' || a.type === 'win_back') return 1
+  return 2
+}
+
+/** The order actions are recommended in: urgent retention, then upgrades and win-back, then the rest, each by audience size. */
+export function byPriority(actions: Action[], now = Date.now() / 1000): Action[] {
+  return [...actions].sort((a, b) => tier(a, now) - tier(b, now) || b.audience_size - a.audience_size)
 }

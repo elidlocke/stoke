@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 
 from app import actions as library
@@ -328,6 +328,8 @@ class Writer:
     socials: list[templates.Social]
     settings: dict[str, WriterAction]  # by action kind; none for actions never changed
     sent: dict[str, int]  # notes marked sent, by action kind
+    last_sent: dict[str, datetime] = field(default_factory=dict)  # the latest note sent, by action kind
+    marked: dict[str, set[str]] = field(default_factory=dict)  # customer ids marked sent or skipped, by action kind
 
 
 async def _audiences(
@@ -348,10 +350,20 @@ async def _audiences(
 def _action_out(a: library.Audience, w: Writer) -> ActionOut:
     act = a.action
     row = w.settings.get(act.kind)
+    is_open = row is not None and row.enabled and row.approved_at is not None
+    marked = w.marked.get(act.kind, set())
+    last_sent = w.last_sent.get(act.kind)
+    now = int(datetime.now(UTC).timestamp())
+    deadlines = [c.deadline for c in a.candidates if c.deadline is not None and c.deadline > now]  # past ones aren't a deadline
     return ActionOut(
         kind=act.kind, type=act.type, title=act.title, rule=act.rule, ask=act.ask, link_id=act.link_id,
         unavailable=a.unavailable, audience_size=len(a.candidates),
         enabled=row.enabled if row else False, sent=w.sent.get(act.kind, 0),
+        open=is_open,
+        to_send=sum(customer_id(c.email) not in marked for c in a.candidates) if is_open else 0,
+        last_sent_at=int(last_sent.timestamp()) if last_sent else None,
+        next_deadline=min(deadlines) if deadlines else None,
+        example_why=a.candidates[0].why if a.candidates else None,
     )
 
 

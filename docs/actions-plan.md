@@ -13,7 +13,13 @@ Stoke shows a writer who their customers are, but it doesn't help them act on it
 - `sync.run_worker()` runs imports and re-reads inside the web process (started in the `main.py` lifespan, behind the `sync_worker` setting).
 - `fetch.py` and `service.*` read the stored objects. While an account's first import runs, views answer `importing` and the UI shows `ImportProgress.tsx`.
 
-**Analytics:** the Overview (with trend charts) and Top customers (`/analytics/top`). The other analytics lists became action pages in step 2.
+**Home and analytics:** the nav is Actions · Paid audience · Settings, and the brand links to Home (`/`, `pages/Home.tsx`).
+- Until a Stripe key is added, Home is the Welcome page (`pages/Welcome.tsx`): example actions (counts only, marked as examples) and a Connect Stripe button. A `no_credentials` error anywhere sends the writer to Home.
+- After that, Home leads with the best true thing to say (take-home up on the last full month, new paying readers this month, or paying readers in the past month), then the two trend charts (new vs churned paying readers, and monthly take-home). Home says that it counts paying readers only, not free subscribers.
+- Below the charts: up to three recommended actions (urgent retention first, then upgrades and win-back, then by audience size; `byPriority` in `actionTypes.ts`), the actions that are on with what's left to send, and a setup checklist.
+- Stoke shows no dollar projections, and no open, click or reply tracking: only what it can measure.
+- Paid audience (`/analytics/top`) is the top customers list. The Overview is gone. The other analytics lists became action pages in step 2.
+- `GET /api/actions` gives each action `open`, `to_send`, `last_sent_at`, `next_deadline` and `example_why` for these views.
 
 **Step 1 (the writer's links), committed:**
 - Backend: `0003_writer_links.py`, `WriterLink` in `db_models.py`, `app/links.py` (user scoping, a cap of 50, and a check that "paid through" is one of the writer's accounts), `LinkIn` / `LinkOut` / `LINK_KINDS` in `models.py`, and `/api/links` CRUD in `routers/settings.py`.
@@ -172,7 +178,8 @@ Alembic migrations, with models in `backend/app/db_models.py`. `0001`–`0003` e
 
 ### Frontend
 - **Settings**: Revenue streams and Audience channels (step 1); Your plans and Where payments come from (step 3). Later: Connect Gmail, caps, pause.
-- **`pages/Actions.tsx`**: the action library, grouped by type (audience size, on/off, sent/converted).
+- **`pages/Home.tsx`**: the Welcome page for new writers; then wins, recommended actions, running actions and a setup checklist.
+- **`pages/Actions.tsx`**: Running (the actions that are on, with what's left to send), then every action in priority order with a type filter (`?type=`; old `#retention`-style links pick the filter).
 - **`pages/Action.tsx`**:
   - audience analytics with "why this person";
   - a template editor with highlighted merge fields;

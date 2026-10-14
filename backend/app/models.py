@@ -241,6 +241,11 @@ class ActionOut(_Out):
     audience_size: int
     enabled: bool  # turned on: its queue is open
     sent: int  # notes marked sent
+    open: bool  # on, with its note template approved: its queue is open
+    to_send: int  # open: the audience minus anyone marked sent or skipped; otherwise 0
+    last_sent_at: int | None  # the latest note marked sent
+    next_deadline: int | None  # the soonest deadline in the audience (retention)
+    example_why: str | None  # why the first person is in the audience
 
 
 class ActionsResponse(_Out):

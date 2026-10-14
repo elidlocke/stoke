@@ -8,8 +8,8 @@ import { Action } from './pages/Action'
 import { Actions } from './pages/Actions'
 import { MOVED_PATHS, MovedToAction, MovedToAnalytics } from './pages/Analytics'
 import { CustomerProfile } from './pages/CustomerProfile'
+import { Home } from './pages/Home'
 import { Leaderboard } from './pages/Leaderboard'
-import { Overview } from './pages/Overview'
 import { Settings } from './pages/Settings'
 
 const queryClient = new QueryClient({
@@ -44,7 +44,7 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route element={<Layout />}>
-                <Route path="/" element={<Overview />} />
+                <Route path="/" element={<Home />} />
                 <Route path="/actions" element={<Actions />} />
                 <Route path="/actions/:kind" element={<Action />} />
                 <Route path="/analytics" element={<Navigate to="/analytics/top" replace />} />

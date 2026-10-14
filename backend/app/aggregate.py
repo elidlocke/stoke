@@ -842,7 +842,10 @@ def at_risk(payments: list[Payment], subs: list[Subscription], now: int) -> list
 
     for p in payments:
         d = p.dispute
-        if d is not None and p.email is not None and d.status in DISPUTE_NEEDS_RESPONSE:
+        # Past its evidence deadline there's nothing left to respond to: Stripe closes it, even if the
+        # stored status hasn't caught up yet.
+        respondable = d is not None and (d.respond_by is None or d.respond_by > now)
+        if d is not None and p.email is not None and d.status in DISPUTE_NEEDS_RESPONSE and respondable:
             out.append(AtRisk(
                 kind="dispute", email=p.email, account_id=p.account_id, plan=p.description,
                 since=d.created, deadline=d.respond_by, amount=d.amount, currency=p.currency,

@@ -56,7 +56,7 @@ function LinkSection({ category }: { category: LinkCategory }) {
 
   return (
     <section className="settings-section">
-      <h2>{copy.title}</h2>
+      <h2 id={category === 'revenue_source' ? 'revenue' : 'channels'}>{copy.title}</h2>
       <p className="muted lede-small">{copy.lede}</p>
       {links.isError && <p className="error">{links.error.message}</p>}
       {list.length > 0 && (

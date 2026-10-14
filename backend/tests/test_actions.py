@@ -185,6 +185,15 @@ def test_retention_actions_split_at_risk():
     assert d.email == "angry@x.com" and "(product not received)" in d.why
 
 
+def test_dispute_check_in_leaves_out_disputes_past_their_deadline():
+    def disputed(email, respond_by):
+        return pay(email, 30, dispute=Dispute(created=NOW - 10 * DAY, status="needs_response", reason=None,
+                                              amount=1000, respond_by=respond_by, movements=()))
+
+    found = run([disputed("late@x.com", NOW - 2 * 3600), disputed("open@x.com", NOW + DAY)], [])
+    assert emails(found["dispute-check-in"]) == ["open@x.com"]
+
+
 def test_open_disputes_and_full_refunds_are_left_out_except_for_dispute_check_in():
     dispute = Dispute(created=NOW - DAY, status="needs_response", reason=None, amount=1000, respond_by=None, movements=())
     payments = [

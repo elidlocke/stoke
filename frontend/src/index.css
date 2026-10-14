@@ -126,7 +126,7 @@ main {
   }
 }
 
-/* ---- Overview cards ---- */
+/* ---- Cards ---- */
 
 .cards {
   display: grid;
@@ -870,7 +870,8 @@ td.link-url {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
 }
 .action-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
   color: var(--text);
   text-decoration: none;
 }
@@ -903,9 +904,15 @@ td.link-url {
 
 .action-card-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   margin: 10px 0 0 !important;
+}
+/* Cards in a row share its height: the chips and the call to action sit on each card's bottom edge. */
+.action-card .action-card-status {
+  margin-top: auto !important;
+  padding-top: 10px;
 }
 
 /* ---- Note templates and the queue ---- */
@@ -1091,4 +1098,184 @@ a.button.ghost {
 }
 .customer-notes {
   margin: 24px 0;
+}
+
+/* ---- Home ---- */
+
+.wins {
+  margin-bottom: 32px;
+}
+.wins-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.wins-scope {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+.wins-kicker {
+  margin: 0 0 2px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+.home-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.section-header .section-title {
+  flex: 1;
+}
+.action-cards.stacked {
+  grid-template-columns: 1fr;
+}
+.action-card-why {
+  margin-top: 8px !important;
+  overflow-wrap: anywhere;
+}
+.action-card-cta {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.action-card.example {
+  cursor: default;
+}
+.action-card.example:hover {
+  border-color: var(--border);
+}
+.working-list {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 4px 20px;
+}
+.working-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.working-row + .working-row {
+  border-top: 1px solid var(--border);
+}
+.working-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.working-title {
+  font-weight: 600;
+}
+.working-row .button {
+  flex: none;
+}
+.setup {
+  margin-top: 32px;
+}
+.setup-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.setup-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.setup-list li.done {
+  color: var(--muted);
+}
+.setup-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--axis);
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--ok);
+  transform: translateY(3px);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+a.button.primary {
+  display: inline-block;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  text-decoration: none;
+}
+@media (prefers-color-scheme: dark) {
+  a.button.primary {
+    color: #111114;
+  }
+}
+
+/* ---- Welcome ---- */
+
+.welcome-hero {
+  padding: 24px 0 32px;
+}
+.welcome-hero h1 {
+  font-size: 32px;
+  line-height: 1.2;
+  margin-bottom: 12px;
+  max-width: 22ch;
+}
+.welcome-hero .lede {
+  margin-bottom: 24px;
+}
+.welcome-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+.welcome-steps h3 {
+  margin: 8px 0 4px;
+  font-size: 16px;
+}
+.welcome-steps p {
+  margin: 0;
+}
+.welcome-step-n {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  text-align: center;
+  line-height: 26px;
+}
+.actions-running {
+  margin-bottom: 8px;
 }

@@ -13,7 +13,7 @@ interface Series {
   color: string // a --series-* token: identity lives on the mark, never the text
 }
 
-const NEW: Series = { key: 'new_customers', label: 'New customers', short: 'new', color: 'var(--series-1)' }
+const NEW: Series = { key: 'new_customers', label: 'New paying readers', short: 'new', color: 'var(--series-1)' }
 const CHURNED: Series = { key: 'churned', label: 'Churned', short: 'churned', color: 'var(--series-2)' }
 const TAKE_HOME: Series = { key: 'take_home', label: 'Take-home', short: '', color: 'var(--series-3)' }
 
@@ -35,12 +35,12 @@ function rows(months: TrendMonth[], series: Series[]): Row[] {
   })
 }
 
-/** The month-over-month charts that lead the Overview: new vs churned customers, and take-home. */
+/** The month-over-month charts on Home: new vs churned paying readers, and take-home. */
 export function TrendCharts() {
   const q = useQuery({ queryKey: ['trends'], queryFn: api.trends })
   return (
     <div className="cards trends">
-      <ChartCard title="New vs churned customers" query={q}>
+      <ChartCard title="New vs churned paying readers" query={q}>
         {q.data && <CustomersChart data={q.data} />}
       </ChartCard>
       <ChartCard title="Monthly take-home" query={q}>
@@ -73,7 +73,7 @@ function ChartCard({
 }
 
 /** The last complete month and the one before it: the comparison the headline makes. */
-function lastTwo(months: TrendMonth[]): [TrendMonth | undefined, TrendMonth | undefined] {
+export function lastTwo(months: TrendMonth[]): [TrendMonth | undefined, TrendMonth | undefined] {
   const complete = months.filter((m) => !m.partial)
   return [complete.at(-1), complete.at(-2)]
 }
@@ -90,7 +90,7 @@ function CustomersChart({ data }: { data: TrendsResponse }) {
           <span className="muted">
             {data.churn_available
               ? `net in ${formatMonthUTC(last.start)}: ${last.new_customers} new, ${last.churned} churned`
-              : `new customers in ${formatMonthUTC(last.start)}`}
+              : `new paying readers in ${formatMonthUTC(last.start)}`}
           </span>
         </div>
       )}
@@ -133,7 +133,7 @@ function TakeHomeChart({ data }: { data: TrendsResponse }) {
 }
 
 /** Month-over-month change: an arrow and sign carry the direction, so it never relies on color. */
-function Delta({ now, before, vs }: { now: number; before: number; vs: string }) {
+export function Delta({ now, before, vs }: { now: number; before: number; vs: string }) {
   if (before <= 0) return null
   const pct = Math.round(((now - before) / before) * 100)
   const tone = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat'

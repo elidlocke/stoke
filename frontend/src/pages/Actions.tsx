@@ -1,20 +1,35 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router'
-import { api, type Action } from '../api'
-import { ACTION_TYPES, actionPath } from '../actionTypes'
-import { Chip } from '../components/Chip'
+import { api, type ActionType } from '../api'
+import { ACTION_TYPES, byPriority } from '../actionTypes'
+import { ActionCard } from '../components/ActionCard'
 import { ListToolbar } from '../components/ListToolbar'
+import { Segmented } from '../components/Segmented'
+import { WorkingRow } from '../components/WorkingRow'
 import { useListParams, useRefreshableQuery } from '../useListView'
 
+type Filter = 'all' | ActionType
+
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  ...ACTION_TYPES.map((t) => ({ value: t.type, label: t.label })),
+]
+
 export function Actions() {
-  const { account, setAccount } = useListParams<string>('view', [], '') // only the account filter
+  const { value: filter, account, setValue, setAccount } = useListParams<Filter>('type', FILTERS, 'all')
   const { query, refresh } = useRefreshableQuery(['actions', account], (r) => api.actions(account, r))
   const { hash } = useLocation()
-  const loaded = query.data !== undefined
-  // A link to one group (e.g. #retention) scrolls to it once the library has loaded.
+  // Older links to one group (e.g. #retention, #win-back) open with that type picked.
   useEffect(() => {
-    if (loaded && hash) document.getElementById(hash.slice(1))?.scrollIntoView()
-  }, [loaded, hash])
+    const type = ACTION_TYPES.find((t) => t.type.replace('_', '-') === hash.slice(1))?.type
+    if (type) setValue(type)
+  }, [hash])
+
+  const all = query.data?.actions ?? []
+  const running = all.filter((a) => a.enabled)
+  const shown = byPriority(all.filter((a) => filter === 'all' || a.type === filter))
+  const noSources = !all.some((a) => a.type === 'cross_sell')
+  const blurb = ACTION_TYPES.find((t) => t.type === filter)?.blurb
 
   return (
     <>
@@ -28,57 +43,45 @@ export function Actions() {
       {query.isPending && <p className="muted">Working out each action’s audience…</p>}
       {query.isError && <p className="error">{query.error.message}</p>}
 
-      {query.data &&
-        ACTION_TYPES.map((t) => {
-          const actions = query.data.actions.filter((a) => a.type === t.type)
-          const noSources = t.type === 'cross_sell' && actions.length === 0
-          return (
-            <section key={t.type} id={t.type.replace('_', '-')}>
-              <h2 className="section-title">{t.label}</h2>
-              <p className="muted lede-small">{t.blurb}</p>
-              <div className="cards action-cards">
-                {actions.map((a) => (
-                  <ActionCard key={a.kind} action={a} />
+      {query.data && (
+        <>
+          <section className="actions-running">
+            <h2 className="section-title">Running</h2>
+            {running.length === 0 ? (
+              <p className="muted">Nothing running yet. Start with one of the actions below.</p>
+            ) : (
+              <ul className="card working-list">
+                {running.map((a) => (
+                  <WorkingRow key={a.kind} action={a} />
                 ))}
-                {noSources && (
-                  <section className="card">
-                    <h3>Cross-sell what else you offer</h3>
-                    <p className="muted">
-                      Add a revenue stream (a course, coaching, a community) and Stoke finds the readers most likely to
-                      want it.
-                    </p>
-                    <Link to="/settings">Add a revenue stream in Settings →</Link>
-                  </section>
-                )}
-              </div>
-            </section>
-          )
-        })}
-    </>
-  )
-}
+              </ul>
+            )}
+          </section>
 
-function ActionCard({ action: a }: { action: Action }) {
-  return (
-    <Link to={actionPath(a.kind)} className="card action-card">
-      <header className="card-header">
-        <h3>{a.title}</h3>
-        {a.unavailable ? (
-          <span className="muted small">Not available</span>
-        ) : (
-          <span className="card-stat">
-            <span className="stat-value num">{a.audience_size}</span>
-            <span className="muted">{a.audience_size === 1 ? 'person' : 'people'}</span>
-          </span>
-        )}
-      </header>
-      <p className="muted small">{a.unavailable ?? a.rule}</p>
-      {(a.enabled || a.sent > 0) && (
-        <p className="action-card-status small">
-          {a.enabled ? <Chip tone="ok">On</Chip> : <Chip>Off</Chip>}
-          {a.sent > 0 && <span className="muted">{a.sent} sent</span>}
-        </p>
+          <section>
+            <h2 className="section-title">All actions</h2>
+            <div className="toolbar">
+              <Segmented options={FILTERS} value={filter} onChange={setValue} label="Type of action" />
+            </div>
+            {blurb && <p className="muted lede-small">{blurb}</p>}
+            <div className="cards action-cards">
+              {shown.map((a) => (
+                <ActionCard key={a.kind} action={a} />
+              ))}
+              {noSources && (filter === 'all' || filter === 'cross_sell') && (
+                <section className="card">
+                  <h3>Cross-sell what else you offer</h3>
+                  <p className="muted">
+                    Add a revenue stream (a course, coaching, a community) and Stoke finds the readers most likely to
+                    want it.
+                  </p>
+                  <Link to="/settings#revenue">Add a revenue stream in Settings →</Link>
+                </section>
+              )}
+            </div>
+          </section>
+        </>
       )}
-    </Link>
+    </>
   )
 }
