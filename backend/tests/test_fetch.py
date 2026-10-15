@@ -74,6 +74,6 @@ async def test_each_user_sees_only_what_their_key_can_read(ready):
 
 
 async def test_accounts_are_kept_apart(ready):
-    other = Account("acct_other", "Other", "usd", "connected", ACCOUNT.client)
+    other = Account("acct_other", "Other", "usd", ACCOUNT.client)
     with pytest.raises(sync.Importing):  # nothing of acct_conn's is read as acct_other's
         await fetch.payments_since(other, None)

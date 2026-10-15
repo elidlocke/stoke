@@ -35,8 +35,8 @@ FORBIDDEN = [
     "dp_", "evidence", "network_reason_code",
 ]
 
-PLATFORM = Account("acct_platform", "Platform", "usd", "platform", client=None)
-CONNECTED = Account("acct_conn", "Creator", "gbp", "connected", client=None)
+PLATFORM = Account("acct_platform", "Platform", "usd", client=None)
+CONNECTED = Account("acct_conn", "Creator", "gbp", client=None)
 
 
 USER = CurrentUser(id=uuid.uuid4(), auth_subject="auth0|test", email="owner@example.com")

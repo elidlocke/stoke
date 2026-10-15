@@ -27,12 +27,11 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.crypto import get_cipher
 from app.db import sessionmaker
 from app.db_models import StripeAccount, StripeBackfill, StripeCredential, StripeObject, StripeSyncQueue
 from app.projection import PROJECTION_REV, project
-from app.stripe_client import STRIPE_API_VERSION, Account, key_livemode, make_client, own_key_accounts
+from app.stripe_client import STRIPE_API_VERSION, Account, own_key_accounts
 
 log = logging.getLogger("stoke.sync")
 
@@ -89,7 +88,7 @@ def _api_version(version: str) -> str:
 
 
 def _options(account: Account, version: str) -> dict:
-    return {**account.options, "stripe_version": _api_version(version)}
+    return {"stripe_version": _api_version(version)}
 
 
 def _service(client: stripe.StripeClient, obj_type: str):
@@ -126,13 +125,12 @@ async def account_key(row: StripeAccount) -> bytes:
     return key
 
 
-_platform_ids: dict[str, str] = {}
 _accounts: TTLCache[tuple[str, bool, str | None], Account] = TTLCache(maxsize=1024, ttl=60)
 
 
 async def account_for(account_id: str, livemode: bool, need: str | None = None) -> Account | None:
     """A client for an account outside any user's request (the worker): a stored key to it, preferring
-    one that can read `need` (a permission name), else the development Connect platform."""
+    one that can read `need` (a permission name)."""
     cache_key = (account_id, livemode, need)
     if (cached := _accounts.get(cache_key)) is not None:
         return cached
@@ -155,15 +153,6 @@ async def account_for(account_id: str, livemode: bool, need: str | None = None) 
     if creds:
         # Empty if the credential's Stripe App was just found uninstalled; the next call tries another.
         account = next(iter(await own_key_accounts(creds[:1])), None)
-    elif (platform_key := get_settings().dev_platform_key) and key_livemode(platform_key) == livemode:
-        client = make_client(platform_key)
-        if platform_key not in _platform_ids:
-            _platform_ids[platform_key] = (await client.v1.accounts.retrieve_current_async()).id
-        account = Account(
-            id=account_id, display_name=account_id, settlement_currency="usd",
-            access="platform" if account_id == _platform_ids[platform_key] else "connected",
-            client=client, livemode=livemode,
-        )
     if account is not None:
         _accounts[cache_key] = account
     return account
@@ -569,7 +558,7 @@ async def _replay_events(account: Account, wait: float | None = None) -> None:
         return
     started = _now()
     since = int((row.events_cursor - CURSOR_OVERLAP).timestamp())
-    page = await account.client.v1.events.list_async({"limit": 100, "created": {"gt": since}}, account.options)
+    page = await account.client.v1.events.list_async({"limit": 100, "created": {"gt": since}})
     found: set[tuple[str, str]] = set()
     async for event in page.auto_paging_iter():
         found.update(targets((event.to_dict().get("data") or {}).get("object") or {}))

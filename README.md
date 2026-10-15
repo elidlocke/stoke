@@ -23,14 +23,17 @@ When an account is connected, Stoke checks with Stripe which of the permissions 
 
 Accounts added before the app, with a restricted key, keep working. Settings shows them with **Switch to the Stripe app**, which converts them in place. New keys can't be added.
 
-For local development, `DEV_MODE=true` with `STRIPE_PLATFORM_KEY` adds your own Connect platform's connected accounts to *every* user's view, to simulate creators.
-
 **What a creator can see depends on how the platform charges:**
 - **Direct charges.** Substack works this way: creators connect a Standard account, and the platform takes an application fee. Customers and emails live in the creator's account, so the app works.
 - **Destination charges.** This is typical with Express accounts. The platform charges customers on its own account and transfers money to the creator, so the creator's account has no customer data. The app can't rank these accounts' customers: they'll show no paying customers.
 
 - `backend/`: FastAPI and Postgres (SQLAlchemy, Alembic). Reads live from the Stripe API and caches results in memory for 5 minutes. Postgres holds users, their settings and their encrypted keys.
 - `frontend/`: React (Vite, React Router, TanStack Query), with sign-in through Auth0.
+
+## Free subscribers from Substack
+Stripe only knows who pays. To reach free subscribers, the writer exports them from Substack (Subscribers → ⋯ → Export, at `https://<publication>.substack.com/publish/subscribers`) and uploads the CSV in **Settings → Your free subscribers**. The export time is read from the filename (`subscriber-export-2026-10-15-15-20-00.csv`, as UTC), so Settings and the action can say how fresh the list is, and flag it after 30 days. Each upload replaces the last.
+
+The **Free → paid** action ranks every free subscriber who's been free for 14+ days and doesn't pay in Stripe by an upgrade score (`actions.upgrade_score`): Substack's activity rating, open rate, the past 30 days' activity, any click, comment or share, and time subscribed, weighted by constants in `backend/app/actions.py`. The weights are a hand-tuned starting point, to check against real upgrades once conversions are tracked. The queue offers 25 at a time, best first. Marking or sending only works for someone in the current batch, and the next person moves up as each one is sent or skipped.
 
 ## How the numbers work
 - **A payment is one PaymentIntent.** Every retry of the same payment attaches to it, so a card that's declined 4 times is one failed payment, not 4. Each payment is matched to its invoice, when it has one. The invoice supplies the plan name, whether the payment was a new subscription, a renewal or a one-off, and the number of attempts.
@@ -141,6 +144,8 @@ npm install
 npm run dev   # https://localhost:5173 (self-signed: trust it once in the browser), proxies /api to 127.0.0.1:8000
 ```
 
+Buttons, lists, statuses and copy follow [docs/ui-style-guide.md](docs/ui-style-guide.md).
+
 ### Tests
 ```sh
 docker compose up -d   # the database tests create and use their own `stoke_test` database
@@ -182,6 +187,7 @@ Plans: the database uses a paid plan, since free Render databases expire after 3
   - **Master key with `KEY_CIPHER=local`:** `STOKE_ENCRYPTION_KEY`, from `.env` locally or from Render's environment in production. **Back it up** alongside `CUSTOMER_ID_SECRET`: if it's lost, stored keys can't be read, and every user has to add their keys again. On Render, the master key sits in the service's environment variables, so anyone with access to the Render service can read it.
   - **Master key, in production:** set `KEY_CIPHER=aws_kms` and `AWS_KMS_KEY_ID`. The master key then never leaves KMS, and every unwrap is permissioned and logged by CloudTrail. Records name the scheme that sealed them, so moving from `local` to KMS means re-encrypting existing keys (or having users re-add them).
 - **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, `CUSTOMER_ID_SECRET`. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing the Stripe App. Back it up with `STOKE_ENCRYPTION_KEY`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
+- **Free subscribers uploaded from Substack** (`backend/app/substack_list.py`) are the writer's readers' emails, so they're stored like Stripe emails: each email and first name is sealed with AES-256-GCM under a data key of the writer's own, bound to the writer and the reader's opaque id, and that data key is itself sealed by the master key. Only free subscribers are kept, and only their email, first name, start date and engagement counts. The uploaded file is never stored, and an upload that isn't an export is refused without echoing its contents. **Remove list** in Settings deletes them all, as does deleting the user.
 - Responses are built only from the Pydantic models in `backend/app/models.py`, and raw Stripe objects are never returned. Stripe errors are logged on the server and returned as a generic 502.
 - **Stripe webhooks** (`POST /api/stripe/webhook`) are public, since Stripe can't sign in, and are checked instead by signature:
   - Each request must carry a `Stripe-Signature` header: an HMAC-SHA256 of the exact body under `STRIPE_WEBHOOK_SECRET`. A request with the header missing or wrong, or older than 5 minutes (so it can't be replayed later), gets a 400 and does nothing. With no secret set, the endpoint returns 404.
@@ -190,6 +196,8 @@ Plans: the database uses a paid plan, since free Render databases expire after 3
   - The `whsec_…` secrets are the thing to protect. If one leaks, delete the endpoint in the Stripe App account's Developers → Webhooks, run `scripts/register_webhook.py` again, and update `STRIPE_WEBHOOK_SECRET`.
 
 ## Limitations
+- Sending has no daily cap or spacing yet (planned: 50 a day across all actions, sends spaced minutes apart, and a slow ramp for a newly connected Gmail; see docs/actions-plan.md). Until then, Free → paid's 25-at-a-time batch is the only limit, so writers should send a batch over a day or more. Gmail allows about 500 recipients a day on a personal account and 2,000 on Workspace, and sending in bursts can trip its limits sooner.
+- Free subscribers have no customer profile, since Stripe has no history for them: the audience and queue show their email without a link, but a note in Contacted still links to an empty profile.
 - Data is read live, so "All time" on a large account can be slow. The upgrade path is syncing charges into a database and keeping it current with Connect webhooks.
 - The profile page, Anniversaries and Cancellations (for lifetime value) filter the account's full payment history. It's cached for 5 minutes and shared with the "All time" leaderboard. The first load can be slow on large accounts. Subscriptions are likewise read in full and cached.
 - A subscription's plan name comes from its latest invoice. After a plan change, that invoice holds only proration lines, so the name is taken from the price's nickname, else from Stripe's "Remaining time on …" line.

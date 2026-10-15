@@ -24,7 +24,6 @@ export interface Account {
   display_name: string
   settlement_currency: string
   // platform: our Connect platform; connected: read via the platform; own_key: the account's own key
-  access: 'platform' | 'connected' | 'own_key'
 }
 
 export interface AccountsResponse {
@@ -241,7 +240,8 @@ export interface Action {
   enabled: boolean // turned on: its queue is open
   sent: number // notes marked sent
   open: boolean // on, with its note template approved: its queue is open
-  to_send: number // open: the audience minus anyone marked sent or skipped; otherwise 0
+  to_send: number // open: the audience minus anyone marked sent or skipped (at most `batch`); otherwise 0
+  batch: number | null // the most offered to send at once, best first (free → paid); null: everyone
   last_sent_at: number | null // the latest note marked sent
   next_deadline: number | null // the soonest deadline in the audience (retention)
   example_why: string | null // why the first person is in the audience
@@ -261,6 +261,7 @@ export interface AudienceEntry {
   lifetime_value: number // take-home across all time
   date: number // the event behind it: subscribing, an anniversary, canceling, ...
   deadline: number | null // retention: next retry, when access ends, or the evidence deadline
+  score: number | null // free → paid: how likely they are to upgrade, 0–1
 }
 
 export interface MergeField {
@@ -306,6 +307,7 @@ export interface QueueEntry {
   plan: string | null
   lifetime_value: number
   deadline: number | null
+  score: number | null // free → paid: how likely they are to upgrade, 0–1
   note: { subject: NotePart[]; body: NotePart[]; missing: string[] }
 }
 
@@ -427,11 +429,26 @@ export interface SubstackProfile {
   url: string // substack.com/@handle
 }
 
+export interface SubstackPublication {
+  subdomain: string // its name on substack.com, for links to its dashboard; free subscriber lists are keyed by it
+  name: string | null
+  url: string // its home page
+}
+
 export interface Substack {
   handle: string | null // null: not set yet
   profile: SubstackProfile | null // null: not set, or it couldn't be read
   suggestions: LinkSuggestion[] // links on the profile not already added
+  publications: SubstackPublication[] // the ones the writer runs, primary first
   error: string | null // why the profile couldn't be read
+}
+
+/** One publication's free subscribers, uploaded from its Substack export. */
+export interface SubstackList {
+  publication: string // its subdomain
+  exported_at: number // from the export's filename, else when it was uploaded
+  uploaded_at: number
+  free_count: number
 }
 
 // monthly / annual: how it's billed; group: team or company plans; other: comp, gift or legacy plans.
@@ -585,6 +602,11 @@ export const api = {
   deleteCredential: (id: string) => request<void>('DELETE', `/api/credentials/${id}`),
   substack: () => get<Substack>('/api/substack'),
   setSubstackHandle: (handle: string | null) => request<Substack>('PUT', '/api/substack', { body: { handle } }),
+  substackLists: () => get<SubstackList[]>('/api/substack/subscribers'),
+  uploadSubstackList: (publication: string, upload: { filename: string; csv: string }) =>
+    request<SubstackList>('PUT', `/api/substack/subscribers/${encodeURIComponent(publication)}`, { body: upload }),
+  deleteSubstackList: (publication: string) =>
+    request<void>('DELETE', `/api/substack/subscribers/${encodeURIComponent(publication)}`),
   links: () => get<{ links: WriterLink[] }>('/api/links'),
   addLink: (link: WriterLinkIn) => request<WriterLink>('POST', '/api/links', { body: link }),
   updateLink: (id: string, link: WriterLinkIn) => request<WriterLink>('PUT', `/api/links/${id}`, { body: link }),

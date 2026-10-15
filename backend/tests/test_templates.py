@@ -67,3 +67,10 @@ def test_fields_fall_back_on_their_own_fallback():
     assert templates.text(parts) == "Hi there, friend"  # a fallback written in the template still wins
     assert templates.missing(parts) == []
     assert templates.missing(templates.fill("{{substack}}", {}, fallbacks)) == ["substack"]
+
+
+def test_free_to_paid_default_fills_how_long_theyve_been_free():
+    subject, body = templates.default("free-to-paid")
+    assert templates.unknown_fields(subject + body, "free-to-paid") == []
+    parts = templates.fill(body, {"free_for": "8 months", "substack": "https://me.substack.com"}, templates.fallbacks("free-to-paid"))
+    assert "for 8 months now" in templates.text(parts) and "https://me.substack.com/subscribe" in templates.text(parts)

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import ARRAY, DateTime, ForeignKey, ForeignKeyConstraint, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -278,3 +278,59 @@ class GmailConnection(Base):
     @property
     def sealed(self) -> Sealed:
         return Sealed(ciphertext=self.ciphertext, wrapped_dek=self.wrapped_dek, cipher=self.cipher)
+
+
+class SubstackList(Base):
+    """One publication's free subscribers, as of its latest Substack export (app/substack_list.py). One per
+    publication the writer runs; each upload replaces that publication's last."""
+
+    __tablename__ = "substack_lists"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    publication: Mapped[str] = mapped_column(Text, primary_key=True)  # its subdomain on substack.com
+    exported_at: Mapped[datetime]  # from the export's filename; the upload time when it doesn't say
+    uploaded_at: Mapped[datetime]
+    free_count: Mapped[int]
+    # The data key that encrypts the subscribers' emails and names, sealed like a Stripe key (app/crypto.py).
+    key_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    key_wrapped_dek: Mapped[bytes] = mapped_column(LargeBinary)
+    key_cipher: Mapped[str] = mapped_column(Text)
+
+    @property
+    def aad(self) -> str:
+        return f"substack_list:{self.user_id}:{self.publication}"
+
+    @property
+    def sealed_key(self) -> Sealed:
+        return Sealed(ciphertext=self.key_ciphertext, wrapped_dek=self.key_wrapped_dek, cipher=self.key_cipher)
+
+
+class SubstackSubscriber(Base):
+    """One free subscriber from the writer's Substack export. Email and first name are encrypted under the
+    list's data key; the engagement counts, which identify nobody, are kept plain for ranking."""
+
+    __tablename__ = "substack_subscribers"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "publication"], ["substack_lists.user_id", "substack_lists.publication"], ondelete="CASCADE",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    publication: Mapped[str] = mapped_column(Text, primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(24), primary_key=True)  # app/customer_id.py
+    email: Mapped[bytes] = mapped_column(LargeBinary)
+    first_name: Mapped[bytes | None] = mapped_column(LargeBinary)
+    started_at: Mapped[datetime]
+    activity: Mapped[int] = mapped_column(default=0)
+    emails_received_6mo: Mapped[int] = mapped_column(default=0)
+    emails_opened_6mo: Mapped[int] = mapped_column(default=0)
+    days_active_30d: Mapped[int] = mapped_column(default=0)
+    post_views_30d: Mapped[int] = mapped_column(default=0)
+    links_clicked: Mapped[int] = mapped_column(default=0)
+    comments: Mapped[int] = mapped_column(default=0)
+    shares: Mapped[int] = mapped_column(default=0)
+
+
+def substack_subscriber_aad(user_id: uuid.UUID, publication: str, customer_id: str) -> bytes:
+    return f"substack_subscriber:{user_id}:{publication}:{customer_id}".encode()

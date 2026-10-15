@@ -38,7 +38,7 @@ def no_retry_client(key="sk_test_platform") -> stripe.StripeClient:
                                http_client=stripe.HTTPXClient())
 
 
-ACCOUNT = Account("acct_conn", "Creator", "usd", "connected", no_retry_client())
+ACCOUNT = Account("acct_conn", "Creator", "usd", no_retry_client())
 
 
 def page(data, path, has_more=False):
@@ -132,7 +132,6 @@ async def test_import_stores_only_the_projection_read_at_the_pinned_version(db, 
     for path, expand in [("payment_intents", sync.EXPAND["payment_intent"]), ("subscriptions", ["latest_invoice"])]:
         call = next(c for c in stripe_api.calls if c.request.url.path == f"/v1/{path}")
         assert call.request.headers["Stripe-Version"] == STRIPE_API_VERSION
-        assert call.request.headers["Stripe-Account"] == "acct_conn"
         q = query(call)
         assert [v for k, v in sorted(q.items()) if k.startswith("expand")] == [[f"data.{e}"] for e in expand]
     sub_call = next(c for c in stripe_api.calls if c.request.url.path == "/v1/subscriptions")

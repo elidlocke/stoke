@@ -21,8 +21,6 @@ class AccountOut(_Out):
     id: str
     display_name: str
     settlement_currency: str
-    # platform: our Connect platform; connected: read via the platform; own_key: the account's own key
-    access: Literal["platform", "connected", "own_key"]
 
 
 class AccountsResponse(_Out):
@@ -246,7 +244,8 @@ class ActionOut(_Out):
     enabled: bool  # turned on: its queue is open
     sent: int  # notes marked sent
     open: bool  # on, with its note template approved: its queue is open
-    to_send: int  # open: the audience minus anyone marked sent or skipped; otherwise 0
+    to_send: int  # open: the audience minus anyone marked sent or skipped (at most `batch`); otherwise 0
+    batch: int | None  # the most offered to send at once, best first (free -> paid); None: everyone
     last_sent_at: int | None  # the latest note marked sent
     next_deadline: int | None  # the soonest deadline in the audience (retention)
     example_why: str | None  # why the first person is in the audience
@@ -266,6 +265,7 @@ class AudienceEntry(_Out):
     lifetime_value: int  # take-home across all time, minor units of reporting_currency
     date: int  # unix seconds: the event behind it (subscribing, an anniversary, canceling, ...)
     deadline: int | None  # retention: next retry, when access ends, or the evidence deadline
+    score: float | None  # free -> paid: how likely they are to upgrade, 0-1
 
 
 class MergeFieldOut(_Out):
@@ -309,6 +309,7 @@ class QueueEntry(_Out):
     plan: str | None
     lifetime_value: int
     deadline: int | None
+    score: float | None  # free -> paid: how likely they are to upgrade, 0-1
     note: NoteOut  # the template filled in for them
 
 
@@ -441,7 +442,7 @@ LinkCategory = Literal["revenue_source", "social"]
 Purchase = Literal["once", "repeat", "subscription"]
 
 LINK_KINDS: dict[str, set[str]] = {
-    "revenue_source": {"calendly", "maven", "gumroad", "teachable", "circle", "luma", "other"},  # the platform it's sold on
+    "revenue_source": {"calendly", "maven", "gumroad", "teachable", "circle", "luma", "book", "other"},  # the platform it's sold on
     "social": {
         "substack", "x", "instagram", "linkedin", "youtube", "tiktok", "threads", "bluesky", "facebook",
         "podcast", "website", "other",
@@ -484,15 +485,35 @@ class SubstackProfileOut(_Out):
     url: str  # their profile, substack.com/@handle
 
 
+class SubstackPublicationOut(_Out):
+    subdomain: str  # its name on substack.com, for links to its dashboard; free subscriber lists are keyed by it
+    name: str | None
+    url: str  # its home page
+
+
 class SubstackOut(_Out):
     handle: str | None  # None: not set yet
     profile: SubstackProfileOut | None  # None: not set, or it couldn't be read
     suggestions: list[LinkSuggestion]  # links on the profile not already added
+    publications: list[SubstackPublicationOut]  # the ones the writer runs, primary first
     error: str | None  # why the profile couldn't be read; the writer adds links by hand
 
 
 class SubstackIn(_In):
     handle: str | None = Field(None, max_length=200)  # "@you", "you" or substack.com/@you; None: forget it
+
+
+class SubstackListOut(_Out):
+    """One publication's free subscribers, uploaded from its Substack export."""
+    publication: str  # its subdomain
+    exported_at: int  # unix seconds: from the export's filename, else when it was uploaded
+    uploaded_at: int
+    free_count: int
+
+
+class SubstackListIn(_In):
+    filename: str = Field(max_length=200)
+    csv: str = Field(max_length=25_000_000)
 
 
 class LinkIn(_In):

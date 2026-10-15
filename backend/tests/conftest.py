@@ -12,7 +12,6 @@ os.environ["STOKE_ENCRYPTION_KEY"] = "11" * 32
 os.environ["AUTH0_DOMAIN"] = "stoke-test.auth0.local"
 os.environ["AUTH0_AUDIENCE"] = "https://api.stoke.test"
 os.environ["ALLOWED_HOSTS"] = "testserver"
-os.environ.pop("DEV_MODE", None)
 os.environ["SYNC_WORKER"] = "false"
 os.environ["GOOGLE_CLIENT_ID"] = "stoke-test.apps.googleusercontent.com"
 os.environ["GOOGLE_CLIENT_SECRET"] = "google-test-secret"
@@ -35,7 +34,7 @@ from sqlalchemy.engine import make_url  # noqa: E402
 from app import db as app_db  # noqa: E402
 from datetime import UTC, datetime  # noqa: E402
 
-from app import credentials, fetch, gmail, stripe_app, sync  # noqa: E402
+from app import credentials, fetch, gmail, stripe_app, substack_list, sync  # noqa: E402
 from app.auth import CurrentUser, clear_jwks_cache  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.crypto import get_cipher  # noqa: E402
@@ -217,12 +216,12 @@ def _clear():
     fetch.clear_cache()
     sync._accounts.clear()
     sync._data_keys.clear()
-    sync._platform_ids.clear()
     clear_scope_cache()
     get_settings.cache_clear()
     get_cipher.cache_clear()
     clear_jwks_cache()
     gmail.clear_cache()
+    substack_list.clear_cache()
     stripe_app.clear_cache()
     stripe_app._locks.clear()
 

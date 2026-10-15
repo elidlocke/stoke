@@ -70,6 +70,22 @@ def test_user_links_are_sorted_into_channels_and_revenue_streams():
     ]
 
 
+def test_books_are_revenue_streams_named_by_title():
+    data = {"userLinks": [
+        # As on substack.com/@substoke: Substack's "books" chip, titled in its value.
+        {"type": "books", "label": "Books", "value": "The Super Powers in Your Fruit and Veggies",
+         "url": "https://bookshop.org/p/books/the-super-powers/f0f2?ean=9798285848646"},
+        {"type": "books", "label": "Books", "value": "Second Book", "url": "https://www.amazon.com/dp/B0TEST"},
+        {"type": "website", "label": None, "url": "https://bookshop.org/p/books/third"},
+    ]}
+    assert as_tuples(substack.suggestions(data)) == [
+        ("revenue_source", "book", "The Super Powers in Your Fruit and Veggies",
+         "https://bookshop.org/p/books/the-super-powers/f0f2?ean=9798285848646", "once"),
+        ("revenue_source", "book", "Second Book", "https://www.amazon.com/dp/B0TEST", "once"),
+        ("revenue_source", "book", "Book", "https://bookshop.org/p/books/third", "once"),
+    ]
+
+
 def test_same_link_ignores_scheme_www_and_trailing_slash():
     assert substack.same_link("https://www.sarahfay.org/", "http://sarahfay.org")
     assert not substack.same_link("https://sarahfay.org/a", "https://sarahfay.org/b")
@@ -95,10 +111,16 @@ async def test_save_a_handle_and_add_its_links(db, make_user, api, respx_mock):
     app.dependency_overrides[current_user] = lambda: user
     respx_mock.get(profile_url("sarahfay")).respond(json=SARAH)
 
-    assert (await api.get("/api/substack")).json() == {"handle": None, "profile": None, "suggestions": [], "error": None}
+    assert (await api.get("/api/substack")).json() == {
+        "handle": None, "profile": None, "suggestions": [], "publications": [], "error": None,
+    }
     out = (await api.put("/api/substack", json={"handle": "@sarahfay"})).json()
     assert out["handle"] == "sarahfay" and out["error"] is None
     assert out["profile"]["url"] == "https://substack.com/@sarahfay"
+    assert out["publications"] == [  # the ones she runs, primary first; not the one she contributes to
+        {"subdomain": "yourexpertguide", "name": "Substack Writers at Work", "url": "https://www.substackwritersatwork.com"},
+        {"subdomain": "sarahfay", "name": "Less & Less of More & More", "url": "https://www.sarahfay.org"},
+    ]
     assert [s["url"] for s in out["suggestions"]] == ["https://www.substackwritersatwork.com", "https://www.sarahfay.org"]
 
     # Once added, a link is no longer suggested.

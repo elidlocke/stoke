@@ -34,7 +34,7 @@ class Social:
 
 
 _FIRST_NAME = MergeField(
-    "first_name", "Their first name, from their Stripe customer record, when it has one", fallback="there", example="Sam",
+    "first_name", "Their first name, from their Stripe customer record or your Substack export, when there is one", fallback="there", example="Sam",
 )
 _PLAN = MergeField("plan", "Their plan, e.g. “Monthly plan”", example="Monthly plan")
 _SUBSTACK = MergeField("substack", "Your Substack link")
@@ -52,6 +52,9 @@ _EXTRA: dict[str, list[MergeField]] = {
     "monthly-to-annual": [_RENEWALS, _SINCE],
     "cross-sell": [_LINK, _LINK_NAME, _SINCE],
     "repeat-booking": [_LINK, _LINK_NAME, MergeField("last", "When they last bought it, e.g. “6 months ago”", example="6 months ago")],
+    "free-to-paid": [
+        MergeField("free_for", "How long they've been a free subscriber, e.g. “8 months”", example="8 months"), _SINCE,
+    ],
     "save": [MergeField("ends", "When their access ends, e.g. “October 20”", example="October 20")],
 }
 
@@ -90,6 +93,13 @@ _DEFAULTS: dict[str, tuple[str, str]] = {
         "Save by switching to annual",
         "Hi {{first_name}},\n\nThank you for being a monthly subscriber since {{since}}. If you'd like, you can switch to an annual "
         "plan and pay less over the year: {{substack}}",
+    ),
+    "free-to-paid": (
+        "Thank you for reading",
+        "Hi {{first_name}},\n\nYou've been reading my newsletter for {{free_for}} now, and I wanted to say thank you "
+        "personally. It means a lot that you keep opening it.\n\nIf it's been worth something to you, would you consider "
+        "becoming a paid subscriber? It's what lets me keep writing: {{substack}}/subscribe\n\n"
+        "Either way, I'm really glad you're here.",
     ),
     "cross-sell": (
         "Something I think you'd like",

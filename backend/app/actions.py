@@ -38,6 +38,21 @@ REPEAT_IDLE_DAYS = 180
 WIN_BACK_DAYS = 90
 EXCLUDE_REFUND_DAYS = 90
 
+# Free -> paid: free subscribers from the writer's Substack export, ranked by upgrade_score.
+FREE_MIN_DAYS = 14
+FREE_BATCH = 25  # offered at a time, best first; the rest wait their turn
+FREE_FULL_TENURE_DAYS = 180  # tenure counts fully from here
+FREE_MIN_RECEIVED = 3  # fewer emails received than this: no open rate yet
+# How much each signal counts toward the score (they sum to 1).
+W_ACTIVITY = 0.30  # Substack's own 0-5 star activity rating
+W_OPEN_RATE = 0.25  # emails opened / received, past 6 months
+W_RECENT = 0.20  # days active or posts viewed, past 30 days
+W_INTENT = 0.10  # any link click, comment or share
+W_TENURE = 0.15  # how long they've been subscribed
+HIGH_SCORE = 0.6
+MEDIUM_SCORE = 0.35
+SUBSTACK = "substack"  # the account_id of a free subscriber: they're in no Stripe account
+
 # How a revenue source is pitched, by the platform it's sold on; "other" goes by how it's bought.
 CrossSellTier = Literal["expensive", "cheap", "subscription"]
 _TIER_BY_KIND: dict[str, CrossSellTier] = {
@@ -103,6 +118,22 @@ class RevenueSource:
 
 
 @dataclass(frozen=True)
+class FreeSubscriber:
+    """A free subscriber from the writer's Substack export (app/substack_list.py)."""
+    email: str
+    first_name: str | None
+    started: int
+    activity: int = 0  # Substack's 0-5 stars
+    emails_received_6mo: int = 0
+    emails_opened_6mo: int = 0
+    days_active_30d: int = 0
+    post_views_30d: int = 0
+    links_clicked: int = 0
+    comments: int = 0
+    shares: int = 0
+
+
+@dataclass(frozen=True)
 class Candidate:
     email: str
     account_id: str
@@ -113,6 +144,7 @@ class Candidate:
     deadline: int | None = None  # retention: next retry, when access ends, or the evidence deadline
     # Merge fields this rule knows about the person, e.g. {"renewals": "5"} (see app/templates.py).
     fields: dict[str, str] = field(default_factory=dict)
+    score: float | None = None  # free -> paid: how likely they are to upgrade, 0-1 (upgrade_score)
 
 
 @dataclass(frozen=True)
@@ -124,6 +156,7 @@ class Action:
     ask: str
     link_id: str | None = None
     needs_subscriptions: bool = True
+    batch: int | None = None  # the most offered to send at once, best first; None: everyone
 
 
 @dataclass(frozen=True)
@@ -189,6 +222,7 @@ class Facts:
     subs: list[Subscription]
     now: int
     labels: Labels = field(default_factory=Labels)
+    free: list[FreeSubscriber] | None = None  # None: no Substack export uploaded
     ranks: list[aggregate.CustomerRank] = field(init=False)
     ltv: dict[str, int] = field(init=False)
     rank_of: dict[str, int] = field(init=False)
@@ -451,6 +485,61 @@ def monthly_to_annual(f: Facts) -> list[Candidate]:
     ])
 
 
+def _open_rate(s: FreeSubscriber) -> float | None:
+    if s.emails_received_6mo < FREE_MIN_RECEIVED:
+        return None
+    return min(s.emails_opened_6mo / s.emails_received_6mo, 1.0)
+
+
+def upgrade_score(s: FreeSubscriber, now: int) -> float:
+    """How likely a free subscriber is to upgrade, 0-1: a weighted sum of engagement and tenure. A
+    hand-tuned heuristic, to check against who actually upgrades once conversions are tracked."""
+    days = (now - s.started) / DAY
+    tenure = min(max((days - FREE_MIN_DAYS) / (FREE_FULL_TENURE_DAYS - FREE_MIN_DAYS), 0.0), 1.0)
+    recent = min(max(s.days_active_30d / 15, s.post_views_30d / 10), 1.0)
+    intent = 1.0 if s.links_clicked or s.comments or s.shares else 0.0
+    score = (
+        W_ACTIVITY * min(max(s.activity, 0), 5) / 5 + W_OPEN_RATE * (_open_rate(s) or 0.0) + W_RECENT * recent
+        + W_INTENT * intent + W_TENURE * tenure
+    )
+    return round(score, 3)
+
+
+def score_tier(score: float) -> str:
+    return "high" if score >= HIGH_SCORE else "medium" if score >= MEDIUM_SCORE else "low"
+
+
+def _free_why(s: FreeSubscriber, now: int) -> str:
+    parts = [f"Free for {_span(now - s.started)}"]
+    if (rate := _open_rate(s)) is not None:
+        parts.append(f"opens {round(rate * 100)}% of emails")
+    if s.days_active_30d:
+        parts.append(f"active {s.days_active_30d} of the last 30 days")
+    elif s.post_views_30d:
+        parts.append(f"{_times(s.post_views_30d, 'post view')} this month")
+    if s.activity:
+        parts.append(f"{s.activity}-star activity")
+    if s.comments or s.shares:
+        parts.append("comments or shares")
+    return " · ".join(parts)
+
+
+def free_to_paid(f: Facts) -> list[Candidate]:
+    """Free subscribers who don't pay (Stripe has the last word: some upgraded after the export), most
+    likely to upgrade first. Nobody is left out for low engagement: they rank low."""
+    payers = set(f.ltv) | {s.email for s in f.subs if s.email and s.status not in NEVER_STARTED}
+    out = []
+    for s in f.free or []:
+        if s.email in payers or s.started > f.now - FREE_MIN_DAYS * DAY:
+            continue
+        fields = {"free_for": _span(f.now - s.started), "since": _long_month(s.started)}
+        if s.first_name:
+            fields["first_name"] = s.first_name
+        c = f.candidate(s.email, SUBSTACK, _free_why(s, f.now), None, s.started, fields=fields)
+        out.append(replace(c, score=upgrade_score(s, f.now)))
+    return sorted(out, key=lambda c: (-(c.score or 0), c.date, c.email))
+
+
 def cross_sell_tier(source: RevenueSource) -> CrossSellTier:
     return _TIER_BY_KIND.get(source.kind) or _TIER_BY_PURCHASE.get(source.purchase, "cheap")
 
@@ -594,6 +683,10 @@ _FIXED: list[tuple[Action, Callable[[Facts], list[Candidate]]]] = [
     (Action("monthly-to-annual", "upgrade", "Monthly → annual",
             f"Current subscriber on a monthly plan, at least {ANNUAL_MIN_RENEWALS} renewals, no failed payments in 12 months.",
             "Switch to annual."), monthly_to_annual),
+    (Action("free-to-paid", "upgrade", "Free → paid",
+            f"Free subscribers for {FREE_MIN_DAYS}+ days who don't pay yet, from your latest Substack export, ranked by how "
+            f"likely they are to upgrade: engagement and time subscribed. {FREE_BATCH} at a time, best first.",
+            "Become a paid subscriber.", needs_subscriptions=False, batch=FREE_BATCH), free_to_paid),
 ]
 
 _RETENTION: list[tuple[Action, Callable[[Facts], list[Candidate]]]] = [
@@ -649,6 +742,8 @@ def audience(
         return Audience(action, [], "Needs read access to Subscriptions on your Stripe key.")
     if action.kind == "founding-upgrade" and not facts.has_founding_plan():
         return Audience(action, [], "No Founding plan found among your subscriptions.")
+    if action.kind == "free-to-paid" and facts.free is None:
+        return Audience(action, [], "Upload your free subscribers from Substack in Settings.")
     people = rule(facts)
     if action.kind != "dispute-check-in":
         people = [c for c in people if c.email not in facts.excluded]
@@ -666,10 +761,12 @@ def with_applications(sources: list[RevenueSource], labels: Labels) -> list[Reve
 def audiences(
     payments: list[Payment], subs: list[Subscription], sources: list[RevenueSource], now: int,
     subscriptions_available: bool = True, only: str | None = None, labels: Labels | None = None,
+    free: list[FreeSubscriber] | None = None,
 ) -> list[Audience]:
-    """Every action's audience (or just the action `only`), in library order."""
+    """Every action's audience (or just the action `only`), in library order. `free`: the writer's free
+    subscribers from Substack, None until they upload them."""
     labels = labels or Labels()
-    facts = Facts(payments, subs, now, labels)
+    facts = Facts(payments, subs, now, labels, free)
     return [
         audience(action, rule, facts, subscriptions_available)
         for action, rule in library(with_applications(sources, labels))

@@ -12,7 +12,6 @@ def test_ids_are_opaque_stable_and_keyed(monkeypatch):
     assert a != cid.customer_id("bob@example.com")
 
     # Independent of API keys: rotating them doesn't change ids.
-    monkeypatch.setenv("STRIPE_API_KEY", "rk_test_rotated")
     monkeypatch.setenv("STRIPE_ACCOUNT_KEYS", "rk_test_new_creator")
     get_settings.cache_clear()
     assert cid.customer_id("ada@example.com") == a

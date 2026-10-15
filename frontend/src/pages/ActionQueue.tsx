@@ -6,6 +6,7 @@ import { Chip } from '../components/Chip'
 import { Filled } from '../components/Filled'
 import { ContactedChip } from '../components/ContactedChip'
 import { Money } from '../components/Money'
+import { SUBSTACK, ScoreChip } from '../components/ScoreChip'
 import { formatDate, formatRelative } from '../format'
 import { customerPath } from '../routes'
 import { useInvalidateAction } from './ActionTemplate'
@@ -83,10 +84,17 @@ function NoteCard({
     <article className="card note-card">
       <header className="note-card-header">
         <div className="note-card-who">
-          <Link to={customerPath(c.customer_id)}>{c.email}</Link> <ContactedChip customerId={c.customer_id} />
+          {c.account_id === SUBSTACK ? c.email : <Link to={customerPath(c.customer_id)}>{c.email}</Link>}{' '}
+          <ContactedChip customerId={c.customer_id} /> <ScoreChip score={c.score} />
           <div className="muted small">
             {c.why}
-            {c.plan && <> · {c.plan}</>} · <Money amount={c.lifetime_value} currency={currency} /> lifetime
+            {c.plan && <> · {c.plan}</>}
+            {c.account_id !== SUBSTACK && (
+              <>
+                {' '}
+                · <Money amount={c.lifetime_value} currency={currency} /> lifetime
+              </>
+            )}
           </div>
         </div>
         {c.deadline != null && (

@@ -1,11 +1,9 @@
 """Account discovery: each user's stored keys, plus a platform key in local development."""
 
-import httpx
 import pytest
 import respx
 from sqlalchemy import update
 
-from app.config import get_settings
 from app.db_models import StripeCredential, UserSettings
 from app.stripe_client import NoCredentials, get_scope
 from tests.conftest import add_key, mock_stripe_keys, stripe_account as account
@@ -29,9 +27,9 @@ async def test_own_keys(db, make_user, stripe):
 
     scope = await get_scope(user)
 
-    assert [(a.id, a.display_name, a.access) for a in scope.accounts] == [
-        ("acct_a", "Creator A", "own_key"),
-        ("acct_b", "My newsletter", "own_key"),  # the user's label wins
+    assert [(a.id, a.display_name) for a in scope.accounts] == [
+        ("acct_a", "Creator A"),
+        ("acct_b", "My newsletter"),  # the user's label wins
     ]
     assert scope.reporting_currency == "eur"  # the first account's payout currency
 
@@ -87,40 +85,3 @@ async def test_rejected_keys_are_left_out(db, make_user, stripe):
 async def test_no_credentials(db, make_user):
     with pytest.raises(NoCredentials):
         await get_scope(await make_user())
-
-
-async def test_platform_key_ignored_outside_dev_mode(db, make_user, monkeypatch):
-    monkeypatch.setenv("STRIPE_PLATFORM_KEY", "sk_test_platform")
-    get_settings.cache_clear()
-    with pytest.raises(NoCredentials):
-        await get_scope(await make_user())
-
-
-async def test_dev_platform_and_own_keys_combined(db, make_user, stripe, monkeypatch):
-    mock_stripe_keys(stripe, {
-        "rk_test_aaaaaaaaaaaa": account("acct_a", "Creator A", "eur"),
-        "rk_test_cccccccccccc": account("acct_conn", "Also connected"),
-        "sk_test_platform": account("acct_platform", "Platform", "gbp"),
-    })
-    user = await make_user()
-    async with db() as session:
-        await add_key(session, user, "rk_test_aaaaaaaaaaaa")
-        await add_key(session, user, "rk_test_cccccccccccc")
-
-    monkeypatch.setenv("DEV_MODE", "true")
-    monkeypatch.setenv("STRIPE_PLATFORM_KEY", "sk_test_platform")
-    get_settings.cache_clear()
-    stripe.get("https://api.stripe.com/v1/accounts").mock(return_value=httpx.Response(200, json={
-        "object": "list", "url": "/v1/accounts", "has_more": False,
-        "data": [account("acct_conn", "Connected"), account("acct_other", "Other")],
-    }))
-
-    scope = await get_scope(user)
-
-    assert [(a.id, a.access) for a in scope.accounts] == [
-        ("acct_platform", "platform"),
-        ("acct_other", "connected"),
-        ("acct_a", "own_key"),
-        ("acct_conn", "own_key"),  # reachable both ways: read with its own key, once
-    ]
-    assert scope.reporting_currency == "gbp"  # platform's payout currency

@@ -55,7 +55,7 @@ def test_library_order_and_types():
     assert kinds == [
         ("welcome", "gratitude"), ("anniversary", "gratitude"), ("welcome-back", "gratitude"), ("gift-thanks", "gratitude"),
         ("vip", "gratitude"),
-        ("founding-upgrade", "upgrade"), ("monthly-to-annual", "upgrade"),
+        ("founding-upgrade", "upgrade"), ("monthly-to-annual", "upgrade"), ("free-to-paid", "upgrade"),
         ("cross-sell-l1", "cross_sell"), ("repeat-booking-l1", "cross_sell"),
         ("win-back", "win_back"), ("save", "retention"), ("card-failing", "retention"), ("dispute-check-in", "retention"),
     ]
@@ -330,3 +330,49 @@ def test_candidates_carry_their_first_name():
     payments = [pay("new@x.com", 5, "subscription_create", name="JANE DOE")]
     [c] = run(payments, [sub("new@x.com", 5)])["welcome"].candidates
     assert c.fields["first_name"] == "Jane"
+
+
+# ---- Free -> paid ----
+
+def free(email, days_ago, **kw) -> actions.FreeSubscriber:
+    return actions.FreeSubscriber(email=email, first_name=kw.pop("first_name", None), started=NOW - days_ago * DAY, **kw)
+
+
+def test_free_to_paid_needs_an_upload():
+    a = run([], [])["free-to-paid"]
+    assert a.unavailable == "Upload your free subscribers from Substack in Settings." and a.candidates == []
+    assert run([], [], free=[])["free-to-paid"].unavailable is None
+
+
+def test_free_to_paid_ranks_by_score_and_leaves_out_payers_and_newcomers():
+    engaged = free("engaged@x.com", 200, activity=5, emails_received_6mo=20, emails_opened_6mo=18, days_active_30d=12,
+                   comments=1, first_name="Evan")
+    lukewarm = free("lukewarm@x.com", 90, activity=2, emails_received_6mo=20, emails_opened_6mo=6)
+    silent = free("silent@x.com", 400)
+    payments, s = monthly_subscriber("upgraded@x.com", 2)
+    a = run(payments, [s], free=[silent, lukewarm, engaged, free("new@x.com", 5, activity=5), free("upgraded@x.com", 300)])
+    a = a["free-to-paid"]
+    assert emails(a) == ["engaged@x.com", "lukewarm@x.com", "silent@x.com"]
+    top = a.candidates[0]
+    assert top.account_id == actions.SUBSTACK and actions.score_tier(top.score) == "high"
+    assert top.why == "Free for 6 months · opens 90% of emails · active 12 of the last 30 days · 5-star activity · comments or shares"
+    assert top.fields == {"first_name": "Evan", "free_for": "6 months", "since": "March 2026"}
+    assert actions.score_tier(a.candidates[-1].score) == "low"
+    assert a.action.batch == actions.FREE_BATCH
+
+
+def test_upgrade_score_rises_with_each_signal():
+    base = free("a@x.com", 14)
+    assert actions.upgrade_score(base, NOW) == 0
+    for change in (
+        {"activity": 3}, {"emails_received_6mo": 10, "emails_opened_6mo": 5}, {"days_active_30d": 3}, {"post_views_30d": 2},
+        {"links_clicked": 1}, {"shares": 1},
+    ):
+        assert actions.upgrade_score(free("a@x.com", 14, **change), NOW) > 0, change
+    # No open rate until they've been sent a few emails.
+    assert actions.upgrade_score(free("a@x.com", 14, emails_received_6mo=2, emails_opened_6mo=2), NOW) == 0
+    # Tenure ramps up to FREE_FULL_TENURE_DAYS, then stops counting.
+    t = [actions.upgrade_score(free("a@x.com", d), NOW) for d in (14, 97, 180, 1000)]
+    assert t[0] < t[1] < t[2] == t[3] == actions.W_TENURE
+    best = free("a@x.com", 365, activity=5, emails_received_6mo=10, emails_opened_6mo=10, days_active_30d=30, comments=1)
+    assert actions.upgrade_score(best, NOW) == 1

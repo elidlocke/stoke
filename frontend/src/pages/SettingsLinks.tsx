@@ -10,7 +10,8 @@ import {
   type WriterLink,
   type WriterLinkIn,
 } from '../api'
-import { Chip } from '../components/Chip'
+import { Cta } from '../components/Cta'
+import { ItemStatus, ListBox, ListItem, type Field } from '../components/ListBox'
 import { formatRelative } from '../format'
 import { useAccountNames } from '../useAccounts'
 import { kindLabel, LINK_KINDS, normalizeUrl, PURCHASES } from '../linkKinds'
@@ -94,34 +95,26 @@ function LinkSection({ category }: { category: LinkCategory }) {
       {isRevenue && <Suggestions category={category} />}
       {guesses.length > 1 && <ConfirmAll guesses={guesses} />}
       {(list.length > 0 || guesses.length > 0) && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{isRevenue ? 'Name' : copy.kindLabel}</th>
-                <th>Link</th>
-                {isRevenue && <th>Paid through</th>}
-                {isRevenue && <th>Payment</th>}
-                {isRevenue && <th>Sales recorded by</th>}
-                {!isRevenue && <th />}
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((l) => (
-                <LinkRow key={l.id} link={l} platforms={sources.filter((s) => s.label === l.id)} />
-              ))}
-              {guesses.map((s) => (
-                <GuessedChannelRow key={s.url} guess={s} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ListBox
+          head={isRevenue ? 'Name' : copy.kindLabel}
+          columns={isRevenue ? [{ label: 'Link', wide: true }, 'Paid through', 'Payment', 'Sales recorded by'] : [{ label: 'Link', wide: true }]}
+        >
+          {list.map((l) => (
+            <LinkRow key={l.id} link={l} platforms={sources.filter((s) => s.label === l.id)} />
+          ))}
+          {guesses.map((s) => (
+            <GuessedChannelRow key={s.url} guess={s} />
+          ))}
+        </ListBox>
       )}
       {isRevenue && <OtherPlatforms sources={sources.filter((s) => s.label === NEWSLETTER || s.label === OTHER)} />}
       {links.isSuccess &&
         (adding ? (
           <AddLink category={category} onDone={() => setAdding(false)} />
+        ) : list.length === 0 && guesses.length === 0 ? (
+          <div className="section-cta">
+            <Cta onClick={() => setAdding(true)}>{copy.add}</Cta>
+          </div>
         ) : (
           <button className="ghost add-link" onClick={() => setAdding(true)}>
             {copy.add}
@@ -178,7 +171,8 @@ function Suggestions({ category }: { category: LinkCategory }) {
 
 function platformKind(platform: string | null): string {
   const name = (platform ?? '').toLowerCase()
-  return Object.keys(LINK_KINDS.revenue_source).find((k) => k !== 'other' && name.includes(k)) ?? 'other'
+  // At a word's start, so "Bookshop" is a book but "Facebook" isn't.
+  return Object.keys(LINK_KINDS.revenue_source).find((k) => k !== 'other' && new RegExp(`\\b${k}`).test(name)) ?? 'other'
 }
 
 /** Platforms whose payments aren't matched to a stream yet: the writer says what each one sells. */
@@ -243,12 +237,16 @@ function PaymentFoundRow({ source: s, streams }: { source: PaymentSource; stream
             <option value={NEW_STREAM}>+ New revenue stream</option>
           </select>
         {s.suggested !== null && !creating && (
-          <span className="small">
-            <Chip>Stoke’s guess</Chip>{' '}
-            <button className="link" disabled={save.isPending} onClick={() => save.mutate(s.suggested)}>
-              Confirm
-            </button>
-          </span>
+          <div>
+            <ItemStatus
+              label="Stoke’s guess"
+              action={
+                <button className="link" disabled={save.isPending} onClick={() => save.mutate(s.suggested)}>
+                  Confirm
+                </button>
+              }
+            />
+          </div>
         )}
       </div>
       {save.isError && <p className="error small">{save.error.message}</p>}
@@ -311,95 +309,107 @@ function LinkRow({ link, platforms }: { link: WriterLink; platforms: PaymentSour
   const unlink = useMutation({ mutationFn: (id: string) => api.labelPaymentSource(id, null), onSuccess: invalidateLabels })
   const isRevenue = link.category === 'revenue_source'
   const account = accounts.find((c) => accountId(c) === link.paid_via_account_id)
-  const columns = isRevenue ? 6 : 4
-
-  return (
-    <>
-      <tr>
-        <td className="wrap">
-          {isRevenue ? link.name : kindLabel(link.category, link.kind)}
-          {(isRevenue || link.name) && (
-            <div className="muted small">{isRevenue ? kindLabel(link.category, link.kind) : link.name}</div>
-          )}
-        </td>
-        <td className="wrap link-url">
-          <a href={link.url} target="_blank" rel="noreferrer">
-            {link.url.replace(/^https:\/\//, '')}
-          </a>
-        </td>
-        {isRevenue && (
-          <td className="wrap">
-            {link.paid_via_account_id === null ? (
-              <span className="muted">Somewhere else</span>
-            ) : account ? (
-              account.label ?? account.display_name
-            ) : (
-              <span className="muted">A removed account</span>
-            )}
-          </td>
-        )}
-        {isRevenue && <td>{PURCHASES.find((p) => p.value === link.purchase)?.label}</td>}
-        {isRevenue && (
-          <td className="wrap">
+  const fields: Field[] = [{ label: 'Link', value: <LinkUrl url={link.url} /> }]
+  if (isRevenue)
+    fields.push(
+      {
+        label: 'Paid through',
+        value:
+          link.paid_via_account_id === null ? (
+            <span className="muted">Somewhere else</span>
+          ) : account ? (
+            account.label ?? account.display_name
+          ) : (
+            <span className="muted">A removed account</span>
+          ),
+      },
+      { label: 'Payment', value: PURCHASES.find((p) => p.value === link.purchase)?.label },
+      {
+        label: 'Sales recorded by',
+        value: (
+          <>
             {platforms.length === 0 ? (
               <span className="muted">—</span>
             ) : (
               platforms.map((p) => (
                 <div key={p.id}>
                   {p.platform ?? 'Unnamed platform'}{' '}
-                  <button className="link small" disabled={unlink.isPending} onClick={() => unlink.mutate(p.id)}>
+                  <button className="link" disabled={unlink.isPending} onClick={() => unlink.mutate(p.id)}>
                     Unlink
                   </button>
                 </div>
               ))
             )}
             {unlink.isError && <div className="error small">{unlink.error.message}</div>}
-          </td>
-        )}
-        {!isRevenue && (
-          <td>
-            <Chip tone="ok">Confirmed</Chip>
-          </td>
-        )}
-        <td className="right actions">
+          </>
+        ),
+      },
+    )
+
+  return (
+    <ListItem
+      title={isRevenue ? link.name : kindLabel(link.category, link.kind)}
+      meta={isRevenue ? kindLabel(link.category, link.kind) : link.name}
+      fields={fields}
+      status={isRevenue ? <SalesStatus link={link} platforms={platforms} /> : <ItemStatus tone="ok" label="Confirmed" />}
+      actions={
+        <>
           <button className="link" onClick={() => setEditing(editing === 'edit' ? null : 'edit')}>
             Edit
           </button>
           <button className="link danger" onClick={() => setEditing(editing === 'remove' ? null : 'remove')}>
             Remove
           </button>
-        </td>
-      </tr>
-      {editing && (
-        <tr className="edit-row">
-          <td colSpan={columns}>
-            {editing === 'edit' ? (
-              <LinkForm
-                category={link.category}
-                initial={link}
-                editing
-                submitLabel="Save"
-                pending={update.isPending}
-                error={update.error}
-                onSubmit={(body) => update.mutate(body)}
-                onCancel={() => setEditing(null)}
-              />
-            ) : (
-              <div className="inline-form">
-                <span>Remove {link.name ?? kindLabel(link.category, link.kind)}?</span>
-                <button className="danger" onClick={() => remove.mutate()} disabled={remove.isPending}>
-                  Remove
-                </button>
-                <button className="ghost" onClick={() => setEditing(null)}>
-                  Cancel
-                </button>
-                {remove.isError && <p className="error">{remove.error.message}</p>}
-              </div>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
+        </>
+      }
+      expanded={
+        editing === 'edit' ? (
+          <LinkForm
+            category={link.category}
+            initial={link}
+            editing
+            submitLabel="Save"
+            pending={update.isPending}
+            error={update.error}
+            onSubmit={(body) => update.mutate(body)}
+            onCancel={() => setEditing(null)}
+          />
+        ) : editing === 'remove' ? (
+          <div className="inline-form">
+            <span>Remove {link.name ?? kindLabel(link.category, link.kind)}?</span>
+            <button className="danger" onClick={() => remove.mutate()} disabled={remove.isPending}>
+              Remove
+            </button>
+            <button className="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </button>
+            {remove.isError && <p className="error">{remove.error.message}</p>}
+          </div>
+        ) : undefined
+      }
+    />
+  )
+}
+
+function LinkUrl({ url }: { url: string }) {
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      {url.replace(/^https:\/\//, '')}
+    </a>
+  )
+}
+
+/** Whether Stoke can see who has bought a revenue stream, so it can skip them. */
+function SalesStatus({ link, platforms }: { link: WriterLink; platforms: PaymentSource[] }) {
+  if (platforms.length > 0) return <ItemStatus tone="ok" label="Tracking sales" />
+  if (link.paid_via_account_id === null)
+    return <ItemStatus label="Can’t see sales" detail="It’s paid for outside your Stripe accounts." />
+  return (
+    <ItemStatus
+      tone="warn"
+      label="No sales matched yet"
+      detail="When its payments appear under Payments Stoke found, match them to it."
+    />
   )
 }
 
@@ -409,46 +419,40 @@ function GuessedChannelRow({ guess }: { guess: LinkSuggestion }) {
   const [editing, setEditing] = useState(false)
   const confirm = useMutation({ mutationFn: api.addLink, onSuccess: invalidate })
   return (
-    <>
-      <tr>
-        <td className="wrap">
-          {kindLabel(guess.category, guess.kind)}
-          {guess.name && <div className="muted small">{guess.name}</div>}
-        </td>
-        <td className="wrap link-url">
-          <a href={guess.url} target="_blank" rel="noreferrer">
-            {guess.url.replace(/^https:\/\//, '')}
-          </a>
-        </td>
-        <td>
-          <Chip>Stoke’s guess</Chip>{' '}
-          <button className="link" onClick={() => confirm.mutate(suggestionBody(guess))} disabled={confirm.isPending}>
-            Confirm
-          </button>
-          {confirm.isError && !editing && <div className="error small">{confirm.error.message}</div>}
-        </td>
-        <td className="right actions">
-          <button className="link" onClick={() => setEditing(!editing)}>
-            Edit
-          </button>
-        </td>
-      </tr>
-      {editing && (
-        <tr className="edit-row">
-          <td colSpan={4}>
-            <LinkForm
-              category="social"
-              initial={suggestionBody(guess)}
-              submitLabel="Confirm"
-              pending={confirm.isPending}
-              error={confirm.error}
-              onSubmit={(body) => confirm.mutate(body)}
-              onCancel={() => setEditing(false)}
-            />
-          </td>
-        </tr>
-      )}
-    </>
+    <ListItem
+      title={kindLabel(guess.category, guess.kind)}
+      meta={guess.name}
+      fields={[{ label: 'Link', value: <LinkUrl url={guess.url} /> }]}
+      status={
+        <ItemStatus
+          label="Stoke’s guess"
+          action={
+            <button className="link" onClick={() => confirm.mutate(suggestionBody(guess))} disabled={confirm.isPending}>
+              Confirm
+            </button>
+          }
+          detail={confirm.isError && !editing && <span className="error">{confirm.error.message}</span>}
+        />
+      }
+      actions={
+        <button className="link" onClick={() => setEditing(!editing)}>
+          Edit
+        </button>
+      }
+      expanded={
+        editing && (
+          <LinkForm
+            category="social"
+            initial={suggestionBody(guess)}
+            submitLabel="Confirm"
+            pending={confirm.isPending}
+            error={confirm.error}
+            onSubmit={(body) => confirm.mutate(body)}
+            onCancel={() => setEditing(false)}
+          />
+        )
+      }
+    />
   )
 }
 
@@ -461,7 +465,7 @@ function ConfirmAll({ guesses }: { guesses: LinkSuggestion[] }) {
     onSettled: invalidate,
   })
   return (
-    <p className="small">
+    <p>
       <span className="muted">Stoke found {guesses.length} channels on your Substack profile.</span>{' '}
       <button className="link" onClick={() => confirm.mutate()} disabled={confirm.isPending}>
         Confirm all

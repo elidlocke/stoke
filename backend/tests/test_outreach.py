@@ -11,7 +11,7 @@ from app.main import app
 from app.stripe_client import Account, AccountScope
 from tests.test_actions import pay, sub
 
-ACCOUNT = Account("acct_a", "Creator", "usd", "own_key", client=None)
+ACCOUNT = Account("acct_a", "Creator", "usd", client=None)
 NEW = "new@x.com"
 NEWER = "newer@x.com"
 

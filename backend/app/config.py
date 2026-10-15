@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 # Repo-root .env, resolved from this file so it loads regardless of the working directory.
@@ -26,16 +26,6 @@ class Settings(BaseSettings):
     # Auth0: the tenant domain (e.g. stoke.us.auth0.com) and the API identifier tokens are issued for.
     auth0_domain: str = ""
     auth0_audience: str = ""
-
-    # Local development only: a Connect platform key whose accounts are added to every user's view.
-    # Ignored unless DEV_MODE is true. STRIPE_API_KEY is accepted as the older name.
-    # SecretStr keeps keys out of reprs, logs and tracebacks.
-    dev_mode: bool = False
-    stripe_platform_key: SecretStr | None = Field(
-        None, validation_alias=AliasChoices("STRIPE_PLATFORM_KEY", "STRIPE_API_KEY")
-    )
-    stripe_account_ids: str = ""
-    include_platform: bool = True
 
     # Key for the opaque customer ids in URLs (see app/customer_id.py). Required.
     customer_id_secret: SecretStr | None = None
@@ -71,10 +61,6 @@ class Settings(BaseSettings):
         return url
 
     @property
-    def account_allowlist(self) -> list[str]:
-        return [a.strip() for a in self.stripe_account_ids.split(",") if a.strip()]
-
-    @property
     def allowed_host_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
@@ -90,12 +76,6 @@ class Settings(BaseSettings):
         """Where Stripe sends the writer back after installing the app, like gmail_redirect_uri. Listed in the app
         manifest's allowed_redirect_uris (stripe-app/stripe-app.json)."""
         return self.cors_origin.rstrip("/") + "/api/stripe/callback"
-
-    @property
-    def dev_platform_key(self) -> str | None:
-        if self.dev_mode and self.stripe_platform_key is not None:
-            return self.stripe_platform_key.get_secret_value() or None
-        return None
 
 
 @lru_cache

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 
@@ -102,7 +103,6 @@ async def accounts(user: CurrentUser) -> AccountsResponse:
                 id=a.id,
                 display_name=a.display_name,
                 settlement_currency=a.settlement_currency,
-                access=a.access,
             )
             for a in scope.accounts
         ],
@@ -331,6 +331,7 @@ class Writer:
     sent: dict[str, int]  # notes marked sent, by action kind
     last_sent: dict[str, datetime] = field(default_factory=dict)  # the latest note sent, by action kind
     marked: dict[str, set[str]] = field(default_factory=dict)  # customer ids marked sent or skipped, by action kind
+    free: list[library.FreeSubscriber] | None = None  # free subscribers from Substack; None: no export uploaded
 
 
 async def _audiences(
@@ -344,8 +345,17 @@ async def _audiences(
     except MissingPermission:
         subs, subscriptions_available = [], False
     now = int(datetime.now(UTC).timestamp())
-    found = library.audiences(payments, subs, w.sources, now, subscriptions_available, only, w.labels)
+    # Free subscribers belong to no Stripe account, so a view of one account leaves them out.
+    free = w.free if account_id is None else []
+    found = library.audiences(payments, subs, w.sources, now, subscriptions_available, only, w.labels, free)
     return scope.reporting_currency, found
+
+
+def _offered(a: library.Audience, done: set[str]) -> list[library.Candidate]:
+    """Who the action offers to contact now: its audience minus `done` (customer ids already marked), best
+    first, cut to the action's batch when it has one."""
+    left = [c for c in a.candidates if customer_id(c.email) not in done]
+    return left[:a.action.batch] if a.action.batch is not None else left
 
 
 def _action_out(a: library.Audience, w: Writer) -> ActionOut:
@@ -361,7 +371,7 @@ def _action_out(a: library.Audience, w: Writer) -> ActionOut:
         unavailable=a.unavailable, audience_size=len(a.candidates),
         enabled=row.enabled if row else False, sent=w.sent.get(act.kind, 0),
         open=is_open,
-        to_send=sum(customer_id(c.email) not in marked for c in a.candidates) if is_open else 0,
+        to_send=len(_offered(a, marked)) if is_open else 0, batch=act.batch,
         last_sent_at=int(last_sent.timestamp()) if last_sent else None,
         next_deadline=min(deadlines) if deadlines else None,
         example_why=a.candidates[0].why if a.candidates else None,
@@ -391,7 +401,7 @@ async def action(user: CurrentUser, w: Writer, kind: str, account_id: str | None
         customers=[
             AudienceEntry(
                 email=c.email, customer_id=customer_id(c.email), account_id=c.account_id, why=c.why, plan=c.plan,
-                lifetime_value=c.lifetime_value, date=c.date, deadline=c.deadline,
+                lifetime_value=c.lifetime_value, date=c.date, deadline=c.deadline, score=c.score,
             )
             for c in a.candidates
         ],
@@ -419,13 +429,10 @@ async def queue(user: CurrentUser, w: Writer, kind: str, done: set[str], account
     source = next((s for s in w.sources if s.id == a.action.link_id), None)
     fallbacks = templates.fallbacks(kind)
     entries = []
-    for c in a.candidates:
-        cid = customer_id(c.email)
-        if cid in done:
-            continue
+    for c in _offered(a, done):
         entries.append(QueueEntry(
-            email=c.email, customer_id=cid, account_id=c.account_id, why=c.why, plan=c.plan,
-            lifetime_value=c.lifetime_value, deadline=c.deadline,
+            email=c.email, customer_id=customer_id(c.email), account_id=c.account_id, why=c.why, plan=c.plan,
+            lifetime_value=c.lifetime_value, deadline=c.deadline, score=c.score,
             note=_note(t.subject, t.body, templates.values(c, source, w.socials), fallbacks),
         ))
     return QueueResponse(open=True, customers=entries)
@@ -468,19 +475,22 @@ async def in_audience(user: CurrentUser, w: Writer, kind: str, cid: str) -> bool
 
 
 async def audience_email(user: CurrentUser, w: Writer, kind: str, cid: str) -> str | None:
-    """The email of the person with id `cid`, if they're in the action's audience."""
+    """The email of the person with id `cid`, if the action offers them now: in its audience and, for an action
+    sent in batches, in the current batch. Someone already marked counts, so the caller can say so."""
     _, a = await _audience(user, w, kind, None, refresh=False)
-    return next((c.email for c in a.candidates if customer_id(c.email) == cid), None)
+    offered = _offered(a, w.marked.get(kind, set()) - {cid})
+    return next((c.email for c in offered if customer_id(c.email) == cid), None)
 
 
-async def emails_by_id(user: CurrentUser) -> dict[str, str]:
-    """Every customer's email by their opaque id, to show who a stored note went to."""
+async def emails_by_id(user: CurrentUser, extra: Iterable[str] = ()) -> dict[str, str]:
+    """Every customer's email by their opaque id, to show who a stored note went to. `extra`: emails from
+    outside Stripe, such as the writer's free subscribers."""
     scope = await get_scope(user)
     per_account, subs = await asyncio.gather(
         asyncio.gather(*(fetch.payments_since(a, None) for a in scope.accounts)),
         _subscriptions_if_permitted(scope.accounts),
     )
-    emails = {p.email for ps in per_account for p in ps if p.email} | {s.email for s in subs if s.email}
+    emails = {p.email for ps in per_account for p in ps if p.email} | {s.email for s in subs if s.email} | set(extra)
     return {customer_id(e): e for e in emails}
 
 

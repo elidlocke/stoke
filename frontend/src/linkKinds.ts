@@ -16,6 +16,7 @@ export const LINK_KINDS: Record<LinkCategory, Record<string, LinkKind>> = {
     teachable: { label: 'Teachable', placeholder: 'you.teachable.com/p/course', purchase: 'once' },
     circle: { label: 'Circle', placeholder: 'you.circle.so', purchase: 'subscription' },
     luma: { label: 'Luma', placeholder: 'lu.ma/you', purchase: 'repeat' },
+    book: { label: 'Book', placeholder: 'bookshop.org/p/books/your-book', purchase: 'once' },
     other: { label: 'Somewhere else', placeholder: 'you.com/shop', purchase: 'once' },
   },
   social: {

@@ -2,13 +2,15 @@ import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router'
 import { api, type Credential } from '../api'
-import { Chip } from '../components/Chip'
+import { Chip, type Tone } from '../components/Chip'
+import { Cta } from '../components/Cta'
+import { ItemStatus, ListBox, ListItem } from '../components/ListBox'
 import { formatRelative } from '../format'
 import { useOAuthOutcome, type Outcome } from '../useOAuthOutcome'
 import { GmailSettings } from './SettingsGmail'
 import { AudienceChannels, RevenueStreams } from './SettingsLinks'
 import { Plans } from './SettingsProfile'
-import { SubstackProfile } from './SettingsSubstack'
+import { FreeSubscribers, SubstackProfile } from './SettingsSubstack'
 
 // How connecting went, from ?stripe= on Stripe's way back through the API (routers/stripe_app.py).
 const OUTCOMES: Record<string, Outcome> = {
@@ -36,6 +38,7 @@ export function Settings() {
       <h2 className="settings-group">Refine what Stoke found</h2>
       <div className="settings-grid">
         <Plans />
+        <FreeSubscribers />
         <RevenueStreams />
         <AudienceChannels />
       </div>
@@ -85,9 +88,7 @@ function StripeAccounts() {
   const outcome = useOAuthOutcome('stripe', OUTCOMES, 'failed')
   return (
     <section className="settings-section full">
-      <h2 id="stripe">
-        2 · Your Stripe accounts {list.some((c) => c.status !== 'invalid') && <Chip tone="ok">Connected</Chip>}
-      </h2>
+      <h2 id="stripe">Your Stripe accounts</h2>
       <p className="muted lede-small">
         Connect Stripe so Stoke can segment your paid subscribers. Stoke installs as a read-only Stripe app: you see
         exactly what it can read before you approve.
@@ -95,23 +96,11 @@ function StripeAccounts() {
       {outcome && <p className={outcome.ok ? 'muted' : 'error'}>{outcome.message}</p>}
       {creds.isError && <p className="error">{creds.error.message}</p>}
       {list.length > 0 && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Connection</th>
-                <th>Status</th>
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((c) => (
-                <CredentialRow key={c.id} cred={c} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ListBox head="Account" columns={['Connection']}>
+          {list.map((c) => (
+            <CredentialRow key={c.id} cred={c} />
+          ))}
+        </ListBox>
       )}
       {creds.isSuccess && <ConnectStripe first={list.length === 0} available={creds.data.connect_available} />}
       {/* Arriving from the Welcome page: once an account is in, point back to where the actions are. */}
@@ -128,44 +117,30 @@ function keyPrefix(c: Credential) {
   return `${c.key_type === 'secret' ? 'sk' : 'rk'}_${c.livemode ? 'live' : 'test'}_…${c.key_last4}`
 }
 
-function Status({ cred }: { cred: Credential }) {
+/** Whether Stoke can read the account. */
+function status(cred: Credential): { tone: Tone; label: string; title?: string } {
   if (cred.status === 'invalid')
-    return cred.key_type === 'oauth' ? (
-      <Chip tone="bad" title="Stoke’s Stripe app was uninstalled from this account, or Stripe stopped its access.">
-        Disconnected in Stripe
-      </Chip>
-    ) : (
-      <Chip tone="bad" title="Stripe no longer accepts this key. It may have been rolled or deleted.">
-        Rejected by Stripe
-      </Chip>
-    )
+    return cred.key_type === 'oauth'
+      ? {
+          tone: 'bad',
+          label: 'Disconnected in Stripe',
+          title: 'Stoke’s Stripe app was uninstalled from this account, or Stripe stopped its access.',
+        }
+      : { tone: 'bad', label: 'Rejected by Stripe', title: 'Stripe no longer accepts this key. It may have been rolled or deleted.' }
   if (cred.status === 'missing_permissions')
-    return (
-      <Chip tone="warn" title={`Stoke can’t read: ${cred.missing_permissions.join(', ')}`}>
-        Missing {cred.missing_permissions.join(', ')}
-      </Chip>
-    )
-  return <Chip tone="ok">Ready</Chip>
+    return {
+      tone: 'warn',
+      label: `Missing ${cred.missing_permissions.join(', ')}`,
+      title: `Stoke can’t read: ${cred.missing_permissions.join(', ')}`,
+    }
+  return { tone: 'ok', label: 'Ready' }
 }
 
-/** Importing the account's payments and subscriptions into Stoke. */
+/** Importing the account's payments and subscriptions into Stoke. A failed import is retried from the row's actions. */
 function ImportState({ cred }: { cred: Credential }) {
-  const invalidateAll = useInvalidateAll()
-  const retry = useMutation({ mutationFn: () => api.retrySync(cred.id), onSuccess: invalidateAll })
   if (cred.status === 'invalid') return null
-  if (cred.sync_state === 'failed')
-    return (
-      <div className="small">
-        <span className="error">Import failed.</span>{' '}
-        <button className="link" onClick={() => retry.mutate()} disabled={retry.isPending}>
-          Retry
-        </button>
-        {retry.isError && <div className="error">{retry.error.message}</div>}
-      </div>
-    )
-  return (
-    <div className="muted small">{cred.sync_state === 'ready' ? 'Up to date' : 'Importing from Stripe…'}</div>
-  )
+  if (cred.sync_state === 'failed') return <div className="error">Import failed.</div>
+  return <div>{cred.sync_state === 'ready' ? 'Up to date' : 'Importing from Stripe…'}</div>
 }
 
 type Editing = 'edit' | 'remove' | null
@@ -175,25 +150,29 @@ function CredentialRow({ cred }: { cred: Credential }) {
   const [editing, setEditing] = useState<Editing>(null)
   const verify = useMutation({ mutationFn: () => api.verifyCredential(cred.id), onSuccess: invalidateAll })
   const reimport = useMutation({ mutationFn: () => api.reimport(cred.id), onSuccess: invalidateAll })
+  const retry = useMutation({ mutationFn: () => api.retrySync(cred.id), onSuccess: invalidateAll })
   const connect = useConnectStripe()
   const isApp = cred.key_type === 'oauth'
   // An app that was uninstalled is reconnected; a key that Stripe refused can't be fixed by checking it again.
   const reconnect = !isApp || cred.status === 'invalid'
 
   return (
-    <>
-      <tr>
-        <td className="wrap">
-          <div>
-            {cred.label ?? cred.display_name} <Chip tone={cred.livemode ? 'accent' : 'neutral'}>{cred.livemode ? 'Live' : 'Test'}</Chip>
-          </div>
-          <div className="muted small">
-            {cred.label ? `${cred.display_name} · ` : ''}
-            {cred.stripe_account_id ?? 'Account id unknown (needs Accounts: Read)'}
-          </div>
-        </td>
-        <td>
-          {isApp ? (
+    <ListItem
+      title={
+        <>
+          {cred.label ?? cred.display_name} <Chip tone={cred.livemode ? 'accent' : 'neutral'}>{cred.livemode ? 'Live' : 'Test'}</Chip>
+        </>
+      }
+      meta={
+        <>
+          {cred.label ? `${cred.display_name} · ` : ''}
+          {cred.stripe_account_id ?? 'Account id unknown (needs Accounts: Read)'}
+        </>
+      }
+      fields={[
+        {
+          label: 'Connection',
+          value: isApp ? (
             'Stripe app'
           ) : (
             <>
@@ -204,33 +183,45 @@ function CredentialRow({ cred }: { cred: Credential }) {
                 </Chip>
               </div>
             </>
-          )}
-        </td>
-        <td className="wrap">
-          <Status cred={cred} />
-          {cred.status !== 'ok' && !(isApp && cred.status === 'invalid') && (
+          ),
+        },
+      ]}
+      status={
+        <ItemStatus
+          {...status(cred)}
+          action={
+            cred.status !== 'ok' &&
+            !(isApp && cred.status === 'invalid') && (
+              <button className="link" onClick={() => verify.mutate()} disabled={verify.isPending}>
+                {verify.isPending ? 'Checking…' : 'Re-check'}
+              </button>
+            )
+          }
+          detail={
             <>
-              {' '}
-              <span className="small">
-                <button className="link" onClick={() => verify.mutate()} disabled={verify.isPending}>
-                  {verify.isPending ? 'Checking…' : 'Re-check'}
-                </button>
-              </span>
+              <ImportState cred={cred} />
+              <div>Checked {formatRelative(cred.last_verified_at)}</div>
+              {verify.isError && <div className="error">{verify.error.message}</div>}
+              {reimport.isError && <div className="error">{reimport.error.message}</div>}
+              {retry.isError && <div className="error">{retry.error.message}</div>}
+              {connect.isError && <div className="error">{connect.error.message}</div>}
             </>
-          )}
-          <ImportState cred={cred} />
-          <div className="muted small">Checked {formatRelative(cred.last_verified_at)}</div>
-          {verify.isError && <div className="error small">{verify.error.message}</div>}
-          {reimport.isError && <div className="error small">{reimport.error.message}</div>}
-          {connect.isError && <div className="error small">{connect.error.message}</div>}
-        </td>
-        <td className="right actions">
+          }
+        />
+      }
+      actions={
+        <>
           {reconnect && (
             <button className="link" onClick={() => connect.mutate()} disabled={connect.isPending}>
               {connect.isPending ? 'Opening Stripe…' : isApp ? 'Reconnect' : 'Switch to the Stripe app'}
             </button>
           )}
-          {cred.status !== 'invalid' && (
+          {cred.status !== 'invalid' && cred.sync_state === 'failed' && (
+            <button className="link" onClick={() => retry.mutate()} disabled={retry.isPending}>
+              {retry.isPending ? 'Retrying…' : 'Retry import'}
+            </button>
+          )}
+          {cred.status !== 'invalid' && cred.sync_state !== 'failed' && (
             <button
               className="link"
               title="Read this account’s history from Stripe again, for when recent payments are missing"
@@ -246,17 +237,16 @@ function CredentialRow({ cred }: { cred: Credential }) {
           <button className="link danger" onClick={() => setEditing(editing === 'remove' ? null : 'remove')}>
             Remove
           </button>
-        </td>
-      </tr>
-      {editing && (
-        <tr className="edit-row">
-          <td colSpan={4}>
-            {editing === 'edit' && <RenameForm cred={cred} onDone={() => setEditing(null)} />}
-            {editing === 'remove' && <RemoveConfirm cred={cred} onDone={() => setEditing(null)} />}
-          </td>
-        </tr>
-      )}
-    </>
+        </>
+      }
+      expanded={
+        editing === 'edit' ? (
+          <RenameForm cred={cred} onDone={() => setEditing(null)} />
+        ) : editing === 'remove' ? (
+          <RemoveConfirm cred={cred} onDone={() => setEditing(null)} />
+        ) : undefined
+      }
+    />
   )
 }
 
@@ -308,17 +298,28 @@ function RemoveConfirm({ cred, onDone }: { cred: Credential; onDone: () => void 
 function ConnectStripe({ first, available }: { first: boolean; available: boolean }) {
   const connect = useConnectStripe()
   if (!available) return <p className="muted">Connecting Stripe isn’t set up on this server yet.</p>
+  const error = connect.isError && <p className="error">{connect.error.message}</p>
+  // Once one account is in, another is a small add, like a channel.
+  if (!first)
+    return (
+      <>
+        <button className="ghost add-link" disabled={connect.isPending} onClick={() => connect.mutate()}>
+          {connect.isPending ? 'Opening Stripe…' : 'Connect another Stripe account'}
+        </button>
+        {error}
+      </>
+    )
   return (
     <div className="connect-stripe card">
-      <h3>{first ? 'Connect your Stripe account' : 'Connect another Stripe account'}</h3>
+      <h3>Connect your Stripe account</h3>
       <p className="muted">
         You’ll choose the account on Stripe and approve Stoke’s read-only access, then come back here. Stoke can’t
         move money or change anything in Stripe.
       </p>
-      <button className="primary" disabled={connect.isPending} onClick={() => connect.mutate()}>
+      <Cta disabled={connect.isPending} onClick={() => connect.mutate()}>
         {connect.isPending ? 'Opening Stripe…' : 'Connect with Stripe'}
-      </button>
-      {connect.isError && <p className="error">{connect.error.message}</p>}
+      </Cta>
+      {error}
     </div>
   )
 }

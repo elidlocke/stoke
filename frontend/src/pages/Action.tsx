@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, type ActionAudienceResponse } from '../api'
@@ -7,6 +7,7 @@ import { Chip } from '../components/Chip'
 import { ContactedChip } from '../components/ContactedChip'
 import { ListToolbar } from '../components/ListToolbar'
 import { Money } from '../components/Money'
+import { SUBSTACK, ScoreChip } from '../components/ScoreChip'
 import { Segmented } from '../components/Segmented'
 import { formatDate, formatRelative } from '../format'
 import { customerPath } from '../routes'
@@ -14,6 +15,7 @@ import { useAccountNames, useMultipleAccounts } from '../useAccounts'
 import { useListParams, useRefreshableQuery } from '../useListView'
 import { History, Queue } from './ActionQueue'
 import { TemplateEditor, useInvalidateAction } from './ActionTemplate'
+import { isStale } from './SettingsSubstack'
 
 // A deadline this close (or already past) is flagged.
 const SOON = 3 * 86400
@@ -78,7 +80,18 @@ export function Action() {
 
       {query.isPending && <p className="muted">Working out who’s in this audience…</p>}
       {query.isError && <p className="error">{query.error.message}</p>}
-      {action?.unavailable && <p className="warning">{action.unavailable}</p>}
+      {action?.unavailable && (
+        <p className="warning">
+          {action.unavailable}
+          {action.kind === 'free-to-paid' && (
+            <>
+              {' '}
+              <Link to="/settings#free-subscribers">Go to Settings →</Link>
+            </>
+          )}
+        </p>
+      )}
+      {action?.kind === 'free-to-paid' && !action.unavailable && <FreeListBanner batch={action.batch} />}
 
       {query.data && !action?.unavailable && (
         <>
@@ -154,6 +167,7 @@ function Audience({
   const accountName = useAccountNames()
   const multipleAccounts = useMultipleAccounts()
   const retention = data.action.type === 'retention'
+  const ranked = data.action.kind === 'free-to-paid'
   const customers = account ? data.customers.filter((c) => c.account_id === account) : data.customers
 
   return (
@@ -165,7 +179,7 @@ function Audience({
         <>
           <p className="muted">
             {customers.length} {customers.length === 1 ? 'person' : 'people'},{' '}
-            {retention ? 'most urgent first' : 'highest lifetime value first'}
+            {retention ? 'most urgent first' : ranked ? 'most likely to upgrade first' : 'highest lifetime value first'}
           </p>
           <div className="table-wrap">
             <table>
@@ -175,9 +189,13 @@ function Audience({
                   <th>Why this person</th>
                   <th>Plan</th>
                   {retention && <th>Act by</th>}
-                  <th className="right" title="Lifetime: everything they paid, after refunds and fees">
-                    Take-home
-                  </th>
+                  {ranked ? (
+                    <th>Likelihood</th>
+                  ) : (
+                    <th className="right" title="Lifetime: everything they paid, after refunds and fees">
+                      Take-home
+                    </th>
+                  )}
                   {multipleAccounts && <th>Account</th>}
                 </tr>
               </thead>
@@ -185,7 +203,7 @@ function Audience({
                 {customers.map((c) => (
                   <tr key={`${c.customer_id}-${c.account_id}`}>
                     <td>
-                      <Link to={customerPath(c.customer_id)}>{c.email}</Link>
+                      {c.account_id === SUBSTACK ? c.email : <Link to={customerPath(c.customer_id)}>{c.email}</Link>}
                       <div>
                         <ContactedChip customerId={c.customer_id} />
                       </div>
@@ -210,10 +228,18 @@ function Audience({
                         )}
                       </td>
                     )}
-                    <td className="right">
-                      <Money amount={c.lifetime_value} currency={data.reporting_currency} />
-                    </td>
-                    {multipleAccounts && <td className="muted">{accountName(c.account_id)}</td>}
+                    {ranked ? (
+                      <td>
+                        <ScoreChip score={c.score} />
+                      </td>
+                    ) : (
+                      <td className="right">
+                        <Money amount={c.lifetime_value} currency={data.reporting_currency} />
+                      </td>
+                    )}
+                    {multipleAccounts && (
+                      <td className="muted">{c.account_id === SUBSTACK ? 'Substack (free)' : accountName(c.account_id)}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -222,5 +248,22 @@ function Audience({
         </>
       )}
     </>
+  )
+}
+
+/** Where the free → paid audience comes from, and how fresh it is: as fresh as the oldest export. */
+function FreeListBanner({ batch }: { batch: number | null }) {
+  const lists = useQuery({ queryKey: ['substack-lists'], queryFn: api.substackLists })
+  if (!lists.data?.length) return null
+  const oldest = Math.min(...lists.data.map((l) => l.exported_at))
+  const stale = isStale(oldest)
+  return (
+    <p className={stale ? 'warning' : 'muted'}>
+      {lists.data.length === 1
+        ? `Ranked from your Substack export of ${formatDate(oldest)} (${formatRelative(oldest)})`
+        : `Ranked from your ${lists.data.length} Substack exports, the oldest from ${formatDate(oldest)} (${formatRelative(oldest)})`}
+      {batch !== null && <> · {batch} at a time, most likely to upgrade first</>} ·{' '}
+      <Link to="/settings#free-subscribers">{stale ? 'Upload a fresh export →' : 'Upload a newer one →'}</Link>
+    </p>
   )
 }

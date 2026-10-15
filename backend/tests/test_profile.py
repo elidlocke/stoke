@@ -51,7 +51,7 @@ def test_payment_sources_name_their_platform_and_suggest_a_label():
 # ---- Through the API ----
 
 
-ACCOUNT = Account("acct_a", "Creator", "usd", "own_key", client=None)
+ACCOUNT = Account("acct_a", "Creator", "usd", client=None)
 
 
 @pytest.fixture

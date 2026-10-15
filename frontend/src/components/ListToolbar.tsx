@@ -26,7 +26,6 @@ export function ListToolbar({
           {accounts.data.accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.display_name}
-              {a.access === 'platform' ? ' (platform)' : ''}
             </option>
           ))}
         </select>

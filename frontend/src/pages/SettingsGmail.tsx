@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api } from '../api'
-import { Chip } from '../components/Chip'
+import { Cta } from '../components/Cta'
+import { ItemStatus, ListBox, ListItem } from '../components/ListBox'
 import { formatRelative } from '../format'
 import { useOAuthOutcome, type Outcome } from '../useOAuthOutcome'
 
@@ -53,45 +54,39 @@ export function GmailSettings() {
       {gmail.isError && <p className="error">{gmail.error.message}</p>}
       {g && !g.available && <p className="muted">Gmail sending isn’t set up on this server yet.</p>}
       {g?.available && !g.email && (
-        <button className="primary" disabled={connect.isPending} onClick={() => connect.mutate()}>
+        <Cta disabled={connect.isPending} onClick={() => connect.mutate()}>
           {connect.isPending ? 'Opening Google…' : 'Connect Gmail'}
-        </button>
+        </Cta>
       )}
       {g?.available && g.email && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Status</th>
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="wrap">{g.email}</td>
-                <td className="wrap">
-                  {g.status === 'ok' ? <Chip tone="ok">Connected</Chip> : <Chip tone="bad">Needs reconnecting</Chip>}
-                  <div className="muted small">
-                    {g.status === 'revoked'
-                      ? 'Google stopped letting Stoke send from this address. Reconnect to keep sending.'
-                      : g.last_sent_at
-                        ? `Last sent ${formatRelative(g.last_sent_at)}`
-                        : `Connected ${formatRelative(g.connected_at!)}`}
-                  </div>
-                </td>
-                <td className="right actions">
-                  <button className="link" disabled={connect.isPending} onClick={() => connect.mutate()}>
-                    {g.status === 'ok' ? 'Use a different Gmail' : 'Reconnect'}
-                  </button>
-                  <button className="link danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-                    Disconnect
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ListBox head="Account">
+          <ListItem
+            title={g.email}
+            status={
+              <ItemStatus
+                tone={g.status === 'ok' ? 'ok' : 'bad'}
+                label={g.status === 'ok' ? 'Connected' : 'Needs reconnecting'}
+                detail={
+                  g.status === 'revoked'
+                    ? 'Google stopped letting Stoke send from this address. Reconnect to keep sending.'
+                    : g.last_sent_at
+                      ? `Last sent ${formatRelative(g.last_sent_at)}`
+                      : `Connected ${formatRelative(g.connected_at!)}`
+                }
+              />
+            }
+            actions={
+              <>
+                <button className="link" disabled={connect.isPending} onClick={() => connect.mutate()}>
+                  {g.status === 'ok' ? 'Use a different Gmail' : 'Reconnect'}
+                </button>
+                <button className="link danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+                  Disconnect
+                </button>
+              </>
+            }
+          />
+        </ListBox>
       )}
       {connect.isError && <p className="error">{connect.error.message}</p>}
       {disconnect.isError && <p className="error">{disconnect.error.message}</p>}

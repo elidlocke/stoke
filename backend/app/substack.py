@@ -29,11 +29,19 @@ class SubstackError(Exception):
 
 
 @dataclass(frozen=True)
+class Publication:
+    subdomain: str  # e.g. "verticals", for verticals.substack.com/publish/...
+    name: str | None
+    url: str  # its home page: the custom domain if it has one
+
+
+@dataclass(frozen=True)
 class Profile:
     handle: str
     name: str | None
     photo_url: str | None
     links: list[LinkSuggestion] = field(default_factory=list)
+    publications: list[Publication] = field(default_factory=list)  # the ones the writer runs, primary first
 
     @property
     def url(self) -> str:
@@ -89,6 +97,7 @@ async def read(handle: str, refresh: bool = False) -> Profile:
     try:
         return Profile(
             handle=handle, name=_str(data.get("name")), photo_url=_str(data.get("photo_url")), links=suggestions(data),
+            publications=publications(data),
         )
     except (AttributeError, TypeError) as exc:  # Substack changed its shape
         raise Unavailable() from exc
@@ -107,8 +116,11 @@ def _str(v: object) -> str | None:
 # Hosts, matched exactly or as a parent domain, and the kind of link they are.
 _REVENUE_HOSTS = {
     "calendly.com": "calendly", "maven.com": "maven", "gumroad.com": "gumroad", "teachable.com": "teachable",
-    "circle.so": "circle", "lu.ma": "luma", "luma.com": "luma",
+    "circle.so": "circle", "lu.ma": "luma", "luma.com": "luma", "bookshop.org": "book",
 }
+# Substack's own names for a userLink that's something the writer sells, when its host doesn't say: a book
+# can link anywhere (a publisher, Amazon), and it's still for sale.
+_REVENUE_TYPES = {"books": "book", "book": "book"}
 _SOCIAL_HOSTS = {
     "x.com": "x", "twitter.com": "x", "instagram.com": "instagram", "linkedin.com": "linkedin",
     "youtube.com": "youtube", "youtu.be": "youtube", "tiktok.com": "tiktok", "threads.net": "threads",
@@ -122,7 +134,7 @@ _SOCIAL_TYPES = {
 }
 _PLATFORM_NAMES = {
     "calendly": "Calendly", "maven": "Maven", "gumroad": "Gumroad", "teachable": "Teachable", "circle": "Circle",
-    "luma": "Luma",
+    "luma": "Luma", "book": "Book",
 }
 
 
@@ -155,7 +167,7 @@ def _link(url: str, social_type: str | None = None, name: str | None = None) -> 
     if cleaned is None:
         return None
     host = urlsplit(cleaned).netloc.removeprefix("www.")
-    if kind := _host_kind(host, _REVENUE_HOSTS):
+    if kind := _REVENUE_TYPES.get((social_type or "").lower()) or _host_kind(host, _REVENUE_HOSTS):
         return LinkSuggestion(
             category="revenue_source", kind=kind, name=name or _PLATFORM_NAMES[kind], url=cleaned,
             purchase=DEFAULT_PURCHASE.get(kind, "once"),
@@ -164,20 +176,41 @@ def _link(url: str, social_type: str | None = None, name: str | None = None) -> 
     return LinkSuggestion(category="social", kind=kind, name=name, url=cleaned)
 
 
-def suggestions(data: dict) -> list[LinkSuggestion]:
-    """The links on a public profile: the publications the writer runs, then the links they added."""
+def _publications(data: dict) -> list[dict]:
+    """The publications the writer runs, their primary one first."""
     pubs = [pu.get("publication") or {} for pu in data.get("publicationUsers") or [] if pu.get("role") == "admin"]
     primary = data.get("primaryPublication")
     if primary and all(p.get("id") != primary.get("id") for p in pubs):
         pubs.insert(0, primary)
+    return pubs
+
+
+def _home(pub: dict) -> str | None:
+    domain = _str(pub.get("custom_domain")) or (f"{pub['subdomain']}.substack.com" if _str(pub.get("subdomain")) else None)
+    return f"https://{domain}" if domain else None
+
+
+def publications(data: dict) -> list[Publication]:
+    """The publications the writer runs, primary first; each has its own subscribers in Substack."""
+    out: list[Publication] = []
+    for pub in _publications(data):
+        if (subdomain := _str(pub.get("subdomain"))) and (url := _home(pub)):
+            out.append(Publication(subdomain=subdomain, name=_str(pub.get("name")), url=url))
+    return out
+
+
+def suggestions(data: dict) -> list[LinkSuggestion]:
+    """The links on a public profile: the publications the writer runs, then the links they added."""
     out: list[LinkSuggestion] = []
-    for pub in pubs:
-        domain = pub.get("custom_domain") or (f"{pub['subdomain']}.substack.com" if pub.get("subdomain") else None)
-        if domain:
-            out.append(LinkSuggestion(category="social", kind="substack", name=_str(pub.get("name")), url=f"https://{domain}"))
+    for pub in _publications(data):
+        if url := _home(pub):
+            out.append(LinkSuggestion(category="social", kind="substack", name=_str(pub.get("name")), url=url))
     for ul in data.get("userLinks") or []:
         if isinstance(ul, dict) and isinstance(ul.get("url"), str):
-            if link := _link(ul["url"], ul.get("type"), _str(ul.get("label"))):
+            name = _str(ul.get("label"))
+            if _REVENUE_TYPES.get(str(ul.get("type") or "").lower()) == "book":
+                name = _str(ul.get("value")) or name  # the book's title; its label is just "Books"
+            if link := _link(ul["url"], ul.get("type"), name):
                 out.append(link)
     unique: list[LinkSuggestion] = []
     for link in out:

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import gmail, links, outreach, profile, service
+from app import gmail, links, outreach, profile, service, substack_list
 from app.auth import CurrentUser, UserDep
 from app.db import get_session
 from app.db_models import Outreach, WriterAction
@@ -34,6 +34,7 @@ CustomerPath = Annotated[str, Path(pattern=r"^[0-9a-f]{24}$")]
 
 async def _writer(session: AsyncSession, user: CurrentUser) -> service.Writer:
     t = await outreach.tally(session, user)
+    free = await substack_list.load(session, user)
     return service.Writer(
         sources=await links.revenue_sources(session, user),
         labels=await profile.labels(session, user),
@@ -42,7 +43,12 @@ async def _writer(session: AsyncSession, user: CurrentUser) -> service.Writer:
         sent=t.sent,
         last_sent=t.last_sent,
         marked=t.marked,
+        free=free.subscribers if free else None,
     )
+
+
+def _free_emails(w: service.Writer) -> list[str]:
+    return [s.email for s in w.free or []]
 
 
 async def _known(user: CurrentUser, w: service.Writer, kind: str) -> None:
@@ -118,7 +124,7 @@ async def add_outreach(kind: KindPath, body: OutreachIn, user: UserDep, session:
         raise outreach.OutreachError("They're not in this action's audience.")
     o = await outreach.record(session, user, row, body.customer_id, body.status, body.subject, body.body)
     await session.refresh(o)
-    emails = await service.emails_by_id(user)
+    emails = await service.emails_by_id(user, _free_emails(w))
     return _outreach_out(o, await outreach.read_note(o), kind, service.titles(w), emails)
 
 
@@ -196,8 +202,9 @@ async def _history(session: AsyncSession, user: CurrentUser, **where: str) -> Ou
     rows = await outreach.history(session, user, **where)
     if not rows:
         return OutreachResponse(outreach=[])
-    titles = service.titles(await _writer(session, user))
-    emails = await service.emails_by_id(user)
+    w = await _writer(session, user)
+    titles = service.titles(w)
+    emails = await service.emails_by_id(user, _free_emails(w))
     notes = await outreach.read_notes(rows)
     return OutreachResponse(outreach=[_outreach_out(o, n, kind, titles, emails) for (o, kind), n in zip(rows, notes)])
 

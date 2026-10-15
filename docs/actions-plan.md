@@ -90,7 +90,8 @@ Stoke shows a writer who their customers are, but it doesn't help them act on it
 - Sent mail lands in the writer's Sent folder, and replies go to them.
 
 **Guardrails:**
-- A daily cap (default 50).
+- A daily cap (default 50). Gmail itself allows about 500 recipients a day on a personal account and 2,000 on Workspace (500 on trials), and bursts or bounces trip its limits sooner.
+- Sends spaced a few minutes apart with some jitter, never back-to-back, and a slow ramp for a newly connected Gmail (e.g. 10, then 20, then 50 a day over the first week or two). Stop for the day on a Gmail rate-limit error, and tell the writer.
 - Never two notes to one person within 14 days, across all actions.
 - A pause-all switch.
 - Highest-value people first, so large audiences drip out.
@@ -109,7 +110,7 @@ Referral and affiliate programs are deferred until after v1.
 
 These links are each action's call to action. Revenue sources paid through a connected Stripe account also tell Stoke who has already bought.
 
-**Out of scope for v1:** free → paid (Substack CSV), ESP/domain sending, Outlook, Gmail drafts, and any auto-send level beyond "approve the template + the 24-hour window".
+**Out of scope for v1:** ESP/domain sending, Outlook, Gmail drafts, and any auto-send level beyond "approve the template + the 24-hour window".
 
 ## v1 action library
 
@@ -127,6 +128,7 @@ Audited for Substack writers:
 | 4 | VIP / testimonial | Gratitude | Top 20 by lifetime take-home and still subscribed, or any current Founding member | Testimonial | Top customers |
 | 5 | Founding upgrade | Upgrade | Current non-Founding subscriber, ≥ 2 renewals, no failed payments in 12 months | Become a Founding member | new |
 | 6 | Monthly → annual | Upgrade | Current monthly subscriber, ≥ 3 renewals, no failed payments in 12 months | Switch to annual | new |
+| 6a | Free → paid | Upgrade | Free subscribers from the writer's uploaded Substack export (Settings), free 14+ days, not paying in Stripe. Ranked by an upgrade score (activity rating 30%, 6-month open rate 25%, past 30 days' activity 20%, any click/comment/share 10%, tenure up to 180 days 15%), offered 25 at a time | Become a paid subscriber: `{{substack}}/subscribe` | new |
 | 7 | Cross-sell: *name* (one per saved revenue source) | Cross-sell | Depends on how people pay for it (below). Excludes past buyers when it's paid through a connected Stripe account | Its link | new |
 | 8 | Repeat booking: *name* | Cross-sell | Bought this before, nothing in 180+ days. Only for revenue sources bought as a "repeat purchase" and paid through Stripe | Its link | new |
 | 9 | Win-back | Win-back | Ended in the last 90 days, not resubscribed, canceled by the customer (not a failed payment) | Come back: a discount if "too expensive", best posts if "unused", otherwise generic | Cancellations |

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, links, profile, service, stripe_app, substack, sync
+from app import credentials, links, profile, service, stripe_app, substack, substack_list, sync
 from app.auth import CurrentUser, UserDep
 from app.db import get_session
 from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
@@ -21,8 +21,11 @@ from app.models import (
     PlansResponse,
     RenameCredentialRequest,
     SubstackIn,
+    SubstackListIn,
+    SubstackListOut,
     SubstackOut,
     SubstackProfileOut,
+    SubstackPublicationOut,
     UserSettingsIn,
     UserSettingsOut,
 )
@@ -31,6 +34,7 @@ from app.stripe_client import clear_scope_cache
 router = APIRouter(prefix="/api")
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+PublicationPath = Annotated[str, Path(pattern=r"^[a-z0-9-]{1,63}$")]  # a subdomain on substack.com
 
 
 async def _sync_states(creds: list[StripeCredential]) -> dict[str, str]:
@@ -135,18 +139,24 @@ async def _substack_out(
     session: AsyncSession, user: CurrentUser, handle: str | None, refresh: bool = False
 ) -> SubstackOut:
     if handle is None:
-        return SubstackOut(handle=None, profile=None, suggestions=[], error=None)
+        return SubstackOut(handle=None, profile=None, suggestions=[], publications=[], error=None)
     try:
         found = await substack.read(handle, refresh)
     except substack.NotFound:
-        return SubstackOut(handle=handle, profile=None, suggestions=[], error=f"No Substack profile found at @{handle}.")
+        return SubstackOut(
+            handle=handle, profile=None, suggestions=[], publications=[],
+            error=f"No Substack profile found at @{handle}.",
+        )
     except substack.Unavailable:
-        return SubstackOut(handle=handle, profile=None, suggestions=[], error=substack.UNAVAILABLE)
+        return SubstackOut(
+            handle=handle, profile=None, suggestions=[], publications=[], error=substack.UNAVAILABLE,
+        )
     existing = [link.url for link in await links.list_for_user(session, user)]
     return SubstackOut(
         handle=handle,
         profile=SubstackProfileOut(name=found.name, photo_url=found.photo_url, url=found.url),
         suggestions=[s for s in found.links if not any(substack.same_link(s.url, url) for url in existing)],
+        publications=[SubstackPublicationOut(subdomain=p.subdomain, name=p.name, url=p.url) for p in found.publications],
         error=None,
     )
 
@@ -171,6 +181,34 @@ async def put_substack(body: SubstackIn, user: UserDep, session: SessionDep) -> 
     (await _prefs(session, user)).substack_handle = handle
     await session.commit()
     return await _substack_out(session, user, handle)  # just read
+
+
+def _list_out(row) -> SubstackListOut:
+    return SubstackListOut(
+        publication=row.publication, exported_at=int(row.exported_at.timestamp()), uploaded_at=int(row.uploaded_at.timestamp()),
+        free_count=row.free_count,
+    )
+
+
+@router.get("/substack/subscribers")
+async def get_substack_lists(user: UserDep, session: SessionDep) -> list[SubstackListOut]:
+    """The writer's uploaded free subscribers, one list per publication: how many, and how fresh."""
+    return [_list_out(row) for row in await substack_list.metas(session, user)]
+
+
+@router.put("/substack/subscribers/{publication}")
+async def put_substack_list(
+    publication: PublicationPath, body: SubstackListIn, user: UserDep, session: SessionDep
+) -> SubstackListOut:
+    """Replaces the publication's free subscribers with those in its Substack export."""
+    export = substack_list.parse(body.filename, body.csv)
+    return _list_out(await substack_list.save(session, user, publication, export))
+
+
+@router.delete("/substack/subscribers/{publication}", status_code=204)
+async def delete_substack_list(publication: PublicationPath, user: UserDep, session: SessionDep) -> Response:
+    await substack_list.delete(session, user, publication)
+    return Response(status_code=204)
 
 
 def _link_out(link: WriterLink) -> LinkOut:

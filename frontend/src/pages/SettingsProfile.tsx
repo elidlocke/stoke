@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Plan, type PlanLabel } from '../api'
 import { Confirmation } from '../components/Confirmation'
+import { ListBox, ListItem } from '../components/ListBox'
 import { Money } from '../components/Money'
 import { useAccountNames, useMultipleAccounts } from '../useAccounts'
 
@@ -40,25 +41,11 @@ export function Plans() {
         </p>
       )}
       {list.length > 0 && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Plan</th>
-                <th className="right">Price</th>
-                <th className="right">Subscribers</th>
-                <th>Label</th>
-                <th />
-                {multipleAccounts && <th>Account</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((p) => (
-                <PlanRow key={p.id} plan={p} multipleAccounts={multipleAccounts} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ListBox head="Plan" columns={['Price', 'Subscribers', 'Label']}>
+          {list.map((p) => (
+            <PlanRow key={p.id} plan={p} multipleAccounts={multipleAccounts} />
+          ))}
+        </ListBox>
       )}
       {plans.data && plans.data.unpriced > 0 && list.length > 0 && (
         <p className="muted small">
@@ -76,43 +63,52 @@ function PlanRow({ plan: p, multipleAccounts }: { plan: Plan; multipleAccounts: 
   const save = useMutation({ mutationFn: (label: PlanLabel | null) => api.labelPlan(p.id, label), onSuccess: invalidate })
   const every = p.interval ? (p.interval_count && p.interval_count > 1 ? `${p.interval_count} ${p.interval}s` : p.interval) : null
   return (
-    <tr>
-      <td className="wrap">{p.name ?? <span className="muted">Unnamed plan</span>}</td>
-      <td className="right">
-        {p.amount != null && p.currency ? (
-          <>
-            <Money amount={p.amount} currency={p.currency} />
-            {every && <span className="muted"> / {every}</span>}
-          </>
-        ) : (
-          <span className="muted">—</span>
-        )}
-      </td>
-      <td className="right num">{p.subscribers}</td>
-      <td>
-        <select
-          aria-label="Plan label"
-          value={p.label ?? p.suggested}
-          disabled={save.isPending}
-          onChange={(e) => save.mutate(e.target.value as PlanLabel)}
-        >
-          {PLAN_LABELS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        {save.isError && <div className="error small">{save.error.message}</div>}
-      </td>
-      <td>
+    <ListItem
+      title={p.name ?? <span className="muted">Unnamed plan</span>}
+      meta={multipleAccounts ? accountName(p.account_id) : undefined}
+      fields={[
+        {
+          label: 'Price',
+          value:
+            p.amount != null && p.currency ? (
+              <>
+                <Money amount={p.amount} currency={p.currency} />
+                {every && <span className="muted"> / {every}</span>}
+              </>
+            ) : (
+              <span className="muted">—</span>
+            ),
+        },
+        { label: 'Subscribers', value: <span className="num">{p.subscribers}</span> },
+        {
+          label: 'Label',
+          value: (
+            <>
+              <select
+                aria-label="Plan label"
+                value={p.label ?? p.suggested}
+                disabled={save.isPending}
+                onChange={(e) => save.mutate(e.target.value as PlanLabel)}
+              >
+                {PLAN_LABELS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {save.isError && <div className="error small">{save.error.message}</div>}
+            </>
+          ),
+        },
+      ]}
+      status={
         <Confirmation
           confirmed={p.label !== null}
           busy={save.isPending}
           onConfirm={() => save.mutate(p.suggested)}
           onReset={() => save.mutate(null)}
         />
-      </td>
-      {multipleAccounts && <td className="muted">{accountName(p.account_id)}</td>}
-    </tr>
+      }
+    />
   )
 }

@@ -8,8 +8,8 @@ Stoke pins, though only the event's type and ids are read: the sync worker re-re
     cd backend
     uv run python scripts/register_webhook.py --url https://stoke-y4sf.onrender.com/api/stripe/webhook
 
-Uses STRIPE_APP_SECRET_KEY (a test key registers a test-mode endpoint), never STRIPE_PLATFORM_KEY, so the
-endpoint can't land on a writer's account. Set the printed signing secret as STRIPE_WEBHOOK_SECRET. For
+Uses STRIPE_APP_SECRET_KEY (a test key registers a test-mode endpoint), so the endpoint can't land on a
+writer's account. Set the printed signing secret as STRIPE_WEBHOOK_SECRET. For
 local development, `stripe listen --all-snapshot --forward-connect-to localhost:8000/api/stripe/webhook`, logged in to the
 app's account, prints a secret to use instead.
 """
