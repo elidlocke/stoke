@@ -37,9 +37,11 @@ If Stripe says the app id `com.stoke.stoke` is taken, change `id` in `stripe-app
 
 ## 4. Copy the install link
 
-In the Stoke account, go to **Apps** (dashboard.stripe.com/apps) → **Stoke** → **External test** → **Get started**. Under **Test OAuth**, copy the **test mode** link. It starts with `https://marketplace.stripe.com/oauth/v2/` and contains `client_id=ca_…`. Stoke adds its own `redirect_uri` and `state` to it.
+External testing is managed in **live mode**, even for test-mode installs. In the Stoke account's live-mode Dashboard, go to **Apps** (dashboard.stripe.com/apps) → **Stoke** → **External test** → **Get started**:
+- **Link access:** Anyone with the link.
+- **Version:** the one you just uploaded.
 
-If Stripe asks you to add testers, add your Substack test account.
+Then, under **Test OAuth**, click **Test mode link** to copy it. It looks like `https://marketplace.stripe.com/oauth/v2/chnlink_…/authorize?client_id=ca_…`. The `chnlink_…` part matters: the link without it, which the app's Settings tab shows, is the public install link. That one only works once the app is published, and until then Stripe says "The provided OAuth link is invalid". Stoke adds its own `redirect_uri` and `state` to the link.
 
 ## 5. Copy the secret key
 

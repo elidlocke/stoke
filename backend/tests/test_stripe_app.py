@@ -210,7 +210,9 @@ async def test_uninstalling_the_app_disconnects_the_account(db, writer, api, str
     other_app = _deauthorized("ca_someone_else")
     assert (await api.post("/api/stripe/webhook", content=other_app, headers=signed(other_app))).status_code == 200
     assert [c.status for c in await _stored(db)] == ["ok"]
+    assert stripe.refreshes == 0  # not even checked
 
+    stripe.refresh_token = "rt_elsewhere"  # uninstalled: Stripe refuses the refresh token
     body = _deauthorized()
     assert (await api.post("/api/stripe/webhook", content=body, headers=signed(body))).status_code == 200
     assert [c.status for c in await _stored(db)] == ["invalid"]
@@ -218,10 +220,32 @@ async def test_uninstalling_the_app_disconnects_the_account(db, writer, api, str
         await get_scope(writer)  # not served from the cached scope
 
 
-async def test_reconnecting_after_an_uninstall(db, writer, api, stripe):
+async def test_an_uninstall_event_stripe_doesnt_back_is_ignored(db, writer, api, stripe):
+    """A correctly signed event isn't taken on trust: someone with the webhook secret can't disconnect a writer."""
     await _connect(api)
     body = _deauthorized()
-    await api.post("/api/stripe/webhook", content=body, headers=signed(body))
+    assert (await api.post("/api/stripe/webhook", content=body, headers=signed(body))).status_code == 200
+    assert stripe.refreshes == 1  # Stripe still issued a token, so the app is installed
+    assert [c.status for c in await _stored(db)] == ["ok"]
+    assert [a.id for a in (await get_scope(writer, refresh=True)).accounts] == ["acct_w"]
 
+
+async def test_an_uninstall_check_stripe_cant_answer_is_retried(db, writer, api, stripe):
+    await _connect(api)
+    stripe.token.mock(return_value=httpx.Response(500, json={"error": {"type": "api_error"}}))
+    body = _deauthorized()
+    # Not acknowledged, so Stripe sends the event again later.
+    assert (await api.post("/api/stripe/webhook", content=body, headers=signed(body))).status_code >= 500
+    assert [c.status for c in await _stored(db)] == ["ok"]
+
+
+async def test_reconnecting_after_an_uninstall(db, writer, api, stripe):
+    await _connect(api)
+    stripe.refresh_token = "rt_elsewhere"
+    body = _deauthorized()
+    await api.post("/api/stripe/webhook", content=body, headers=signed(body))
+    assert [c.status for c in await _stored(db)] == ["invalid"]
+
+    stripe.refresh_token = "rt_1"
     assert await _connect(api) == "/settings?stripe=connected#stripe"
     assert [c.status for c in await _stored(db)] == ["ok"]

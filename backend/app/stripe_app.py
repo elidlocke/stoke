@@ -10,7 +10,8 @@
 The refresh token is stored only encrypted, in the credential's ciphertext. Stripe rolls it on every refresh,
 so each new one is saved before the access token it came with is used, one refresh at a time per credential.
 Access tokens are kept in memory only. If Stripe refuses the refresh token (the app was uninstalled), the
-credential is marked invalid and the writer is asked to reconnect.
+credential is marked invalid and the writer is asked to reconnect. An uninstall webhook is checked the same way
+before anything is disconnected, so a forged one can't disconnect a writer.
 """
 
 import asyncio
@@ -22,7 +23,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 import stripe
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app import oauth_state
 from app.auth import CurrentUser
@@ -207,18 +208,21 @@ async def access_token(cred: StripeCredential) -> str:
 
 
 async def uninstalled(account_id: str, livemode: bool) -> list[uuid.UUID]:
-    """The app was uninstalled from an account: every app credential for it stops working. The ids of the users
-    whose credentials changed."""
-    async with sessionmaker()() as session, session.begin():
-        rows = list(await session.scalars(select(StripeCredential).where(
+    """A webhook says the app was uninstalled from an account. Not taken on trust (a forged event would disconnect
+    a writer): each of the account's app credentials is checked with Stripe by refreshing its token, and only those
+    Stripe refuses are disconnected (by `access_token`). The ids of the users whose credentials were disconnected."""
+    async with sessionmaker()() as session:
+        creds = list(await session.scalars(select(StripeCredential).where(
             StripeCredential.stripe_account_id == account_id, StripeCredential.livemode == livemode,
-            StripeCredential.key_type == "oauth",
+            StripeCredential.key_type == "oauth", StripeCredential.status != "invalid",
         )))
-        if rows:
-            await session.execute(
-                update(StripeCredential).where(StripeCredential.id.in_([r.id for r in rows]))
-                .values(status="invalid", missing_permissions=[])
-            )
-    for r in rows:
-        forget(r.id)
-    return [r.user_id for r in rows]
+    disconnected = []
+    for cred in creds:
+        forget(cred.id)  # a cached access token proves nothing: ask Stripe now
+        try:
+            await access_token(cred)
+        except AppDisconnected:
+            disconnected.append(cred.user_id)
+        else:
+            log.warning("Ignored an uninstall event for %s: Stripe still authorizes the app there", account_id)
+    return disconnected

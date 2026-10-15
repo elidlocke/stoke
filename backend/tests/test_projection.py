@@ -1,6 +1,7 @@
 """What's stored of each Stripe object: enough for every view, and no personal data but encrypted emails."""
 
 import json
+from decimal import Decimal
 import os
 
 import pytest
@@ -90,6 +91,15 @@ def test_expanded_references_keep_only_their_id():
     assert project("payment_intent", make_pi(), KEY)["customer"] == "cus_1"
     assert project("payment_intent", make_pi(customer="cus_9"), KEY)["customer"] == "cus_9"
     assert project("payment_intent", make_pi(latest_charge="ch_1"), KEY)["latest_charge"] == "ch_1"
+
+
+def test_decimals_are_stored_as_stripes_strings():
+    """The SDK parses decimal strings into Decimal, which JSON can't store."""
+    line = {"pricing": {"price_details": {"price": "price_1", "product": "prod_1"}, "unit_amount_decimal": Decimal("800")},
+            "quantity_decimal": Decimal("1")}
+    stored = project("invoice", make_invoice("pi_1", lines={"data": [line]}), KEY)
+    assert stored["lines"]["data"][0]["pricing"]["unit_amount_decimal"] == "800"
+    json.dumps(stored)
 
 
 def test_prices_and_application_are_kept():

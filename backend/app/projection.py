@@ -13,6 +13,7 @@ Changing a projection changes what's stored: bump PROJECTION_REV, then run scrip
 """
 
 import base64
+from decimal import Decimal
 from typing import Any
 
 from app.crypto import DecryptionError, aead_open, aead_seal
@@ -135,7 +136,8 @@ def _project(value: Any, spec: Any, key: bytes) -> Any:
     if value is None:
         return None
     if spec == KEEP:
-        return value
+        # The SDK parses Stripe's decimal strings (e.g. unit_amount_decimal); stored as the string Stripe sent.
+        return str(value) if isinstance(value, Decimal) else value
     if spec == SEAL:
         return _seal(value, key) if isinstance(value, str) else None
     if spec == ID:
