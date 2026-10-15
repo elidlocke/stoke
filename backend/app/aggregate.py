@@ -883,6 +883,10 @@ class TrendMonth:
     new_customers: int = 0  # first successful payment or subscription this month
     churned: int = 0  # subscribers whose access ended this month, with nothing else still running
     take_home: int = 0  # from payments made this month, after their refunds, fees and disputes
+    # take_home split by where it came from; the three add up to it.
+    take_home_subscriptions: int = 0  # subscription payments
+    take_home_newsletter_other: int = 0  # the newsletter's one-offs: gifts, and payments its platform made
+    take_home_other_streams: int = 0  # everything else: sales on the writer's other revenue streams
 
 
 def churn_dates(subs: list[Subscription]) -> list[tuple[str, int]]:
@@ -904,7 +908,35 @@ def churn_dates(subs: list[Subscription]) -> list[tuple[str, int]]:
     return out
 
 
-def trends(payments: list[Payment], subs: list[Subscription], now: datetime, months: int = TREND_MONTHS) -> list[TrendMonth]:
+_GIFT = re.compile(r"\bgift\b", re.IGNORECASE)
+
+
+def is_gift(p: Payment) -> bool:
+    """A subscription bought for someone else: on Substack, a one-off invoice for
+    "<publication> subscription gift for <their email>"."""
+    return not (p.billing_reason or "").startswith("subscription") and bool(_GIFT.search(p.description or ""))
+
+
+TakeHomeSource = Literal["subscriptions", "newsletter_other", "other_streams"]
+
+
+def take_home_source(p: Payment, newsletter_apps: set[str] | frozenset[str] = frozenset()) -> TakeHomeSource:
+    """Where a payment's money came from. `newsletter_apps`: the Connect applications the writer
+    confirmed are the newsletter's own (e.g. Substack's), so their one-offs aren't another stream's sale."""
+    if (p.billing_reason or "").startswith("subscription"):
+        return "subscriptions"
+    if is_gift(p) or (p.application is not None and p.application in newsletter_apps):
+        return "newsletter_other"
+    return "other_streams"
+
+
+def trends(
+    payments: list[Payment],
+    subs: list[Subscription],
+    now: datetime,
+    months: int = TREND_MONTHS,
+    newsletter_apps: set[str] | frozenset[str] = frozenset(),
+) -> list[TrendMonth]:
     """New customers, churned subscribers and take-home for each of the last `months` calendar months.
     Refunds and disputes count against the month of the payment, as on the leaderboard."""
     starts = month_starts(months, now)
@@ -923,4 +955,6 @@ def trends(payments: list[Payment], subs: list[Subscription], now: datetime, mon
     for p in payments:
         if p.countable and p.take_home_reporting is not None and (m := bucket(p.created)):
             m.take_home += p.take_home_reporting
+            source = f"take_home_{take_home_source(p, newsletter_apps)}"
+            setattr(m, source, getattr(m, source) + p.take_home_reporting)
     return out

@@ -1,10 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Link } from 'react-router'
 import { api, type TrendMonth, type TrendsResponse } from '../api'
 import { formatMoney, formatMoneyCompact, formatMonthUTC } from '../format'
 
-type Key = 'new_customers' | 'churned' | 'take_home'
+type Key =
+  | 'new_customers'
+  | 'churned'
+  | 'take_home'
+  | 'take_home_subscriptions'
+  | 'take_home_newsletter_other'
+  | 'take_home_other_streams'
 
 interface Series {
   key: Key
@@ -16,6 +23,15 @@ interface Series {
 const NEW: Series = { key: 'new_customers', label: 'New paying readers', short: 'new', color: 'var(--series-1)' }
 const CHURNED: Series = { key: 'churned', label: 'Churned', short: 'churned', color: 'var(--series-2)' }
 const TAKE_HOME: Series = { key: 'take_home', label: 'Take-home', short: '', color: 'var(--series-3)' }
+
+// Take-home by where it came from, bottom of the stack first: the writer's other revenue streams sit on
+// the baseline, where a band is easiest to read. Orange stays in the middle: blue and purple are too
+// close to share an edge in dark mode.
+const BY_SOURCE: Series[] = [
+  { key: 'take_home_other_streams', label: 'Other revenue streams', short: '', color: 'var(--series-3)' },
+  { key: 'take_home_newsletter_other', label: 'Gifts & Substack one-offs', short: '', color: 'var(--series-2)' },
+  { key: 'take_home_subscriptions', label: 'Subscriptions', short: '', color: 'var(--series-1)' },
+]
 
 // One row per month. Each series is split in two: complete months on a solid line, and the
 // last complete month joined to the month in progress on a dashed one, so a partial month
@@ -107,6 +123,9 @@ function TakeHomeChart({ data }: { data: TrendsResponse }) {
   const cur = data.reporting_currency
   const [last, prior] = lastTwo(data.months)
   const current = data.months.at(-1)
+  // Until a sale comes in from another platform, a stack would be one band: keep the single line.
+  const bySource = data.months.some((m) => m.take_home_other_streams > 0)
+  const legend = [...BY_SOURCE].reverse() // top of the stack first, as it reads
   return (
     <>
       {last && (
@@ -116,13 +135,26 @@ function TakeHomeChart({ data }: { data: TrendsResponse }) {
           {prior && <Delta now={last.take_home} before={prior.take_home} vs={formatMonthUTC(prior.start, 'short')} />}
         </div>
       )}
-      {current?.partial && <MonthSoFarKey />}
+      {last && last.take_home_other_streams > 0 && (
+        <p className="muted card-substat">
+          <strong className="num">{formatMoney(last.take_home_other_streams, cur)}</strong> from your other revenue
+          streams in {formatMonthUTC(last.start)}
+        </p>
+      )}
+      {bySource ? <Legend series={legend} /> : current?.partial && <MonthSoFarKey />}
       <Chart
         data={data}
-        series={[TAKE_HOME]}
+        series={bySource ? BY_SOURCE : [TAKE_HOME]}
+        stacked={bySource}
         format={(v) => formatMoney(v, cur)}
         formatTick={(v) => formatMoneyCompact(v, cur)}
       />
+      <p className="muted chart-note">
+        From your connected Stripe accounts.
+        {!bySource && ' Sales from your other platforms show here once they’re matched in '}
+        {!bySource && <Link to="/settings#revenue">Settings</Link>}
+        {!bySource && '.'}
+      </p>
       {data.unconverted_count > 0 && (
         <p className="muted chart-note">
           {data.unconverted_count} payment{data.unconverted_count === 1 ? '' : 's'} left out: no exchange rate.
@@ -175,18 +207,20 @@ function Chart({
   series,
   format,
   formatTick = format,
+  stacked = false,
 }: {
   data: TrendsResponse
   series: Series[]
   format: (v: number) => string
   formatTick?: (v: number) => string
+  stacked?: boolean // series stack into one total, bottom first; the legend and tooltip carry identity
 }) {
   const chartRows = rows(data.months, series)
   const last = chartRows.length - 1
   // Direct end-labels only when they can't collide; otherwise the legend and tooltip carry identity.
   const ends = series.map((s) => chartRows[last]?.[s.key] ?? 0)
   const spread = Math.max(...ends) - Math.min(...ends)
-  const showEndLabels = series.length === 1 || spread >= 0.15 * Math.max(1, ...chartRows.flatMap((r) => series.map((s) => r[s.key])))
+  const showEndLabels = !stacked && (series.length === 1 || spread >= 0.15 * Math.max(1, ...chartRows.flatMap((r) => series.map((s) => r[s.key]))))
 
   const endLabel = (s: Series) =>
     function EndLabel(p: { x?: number | string; y?: number | string; index?: number; value?: unknown }) {
@@ -201,7 +235,7 @@ function Chart({
   return (
     <div className="chart" role="img" aria-label={`${series.map((s) => s.label).join(' and ')} by month`}>
       <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={chartRows} margin={{ top: 12, right: showEndLabels ? 72 : 12, bottom: 0, left: 0 }}>
+        <ComposedChart data={chartRows} margin={{ top: 12, right: showEndLabels ? 72 : 12, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} stroke="var(--grid)" />
           <XAxis
             dataKey="label"
@@ -224,11 +258,17 @@ function Chart({
             isAnimationActive={false}
             content={({ active, payload }) =>
               active && payload?.length ? (
-                <ChartTooltip row={payload[0].payload as Row} series={series} format={format} />
+                <ChartTooltip
+                  row={payload[0].payload as Row}
+                  series={stacked ? [...series].reverse() : series}
+                  format={format}
+                  total={stacked}
+                />
               ) : null
             }
           />
-          {series.flatMap((s) => [
+          {stacked && series.flatMap((s) => stackedAreas(s))}
+          {!stacked && series.flatMap((s) => [
             <Line
               key={`${s.key}-solid`}
               dataKey={`${s.key}_solid`}
@@ -255,14 +295,24 @@ function Chart({
               isAnimationActive={false}
             />,
           ])}
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   )
 }
 
 /** Every series at the hovered month; the value leads, the series name follows. */
-function ChartTooltip({ row, series, format }: { row: Row; series: Series[]; format: (v: number) => string }) {
+function ChartTooltip({
+  row,
+  series,
+  format,
+  total = false,
+}: {
+  row: Row
+  series: Series[]
+  format: (v: number) => string
+  total?: boolean // the series add up to take-home: show it too
+}) {
   return (
     <div className="chart-tooltip">
       <div className="muted">
@@ -276,6 +326,46 @@ function ChartTooltip({ row, series, format }: { row: Row; series: Series[]; for
           <span className="muted">{s.label}</span>
         </div>
       ))}
+      {total && (
+        <div className="chart-tooltip-row chart-tooltip-total">
+          <span className="line-key" aria-hidden />
+          <strong className="num">{format(row.take_home)}</strong>
+          <span className="muted">Total take-home</span>
+        </div>
+      )}
     </div>
   )
+}
+
+/** One band of a stacked chart: complete months filled, with a surface-colored edge as the gap between
+ * bands; the month in progress stacked separately, lighter and dashed, so it doesn't read as a drop. */
+function stackedAreas(s: Series) {
+  return [
+    <Area
+      key={`${s.key}-solid`}
+      dataKey={`${s.key}_solid`}
+      stackId="solid"
+      type="linear"
+      fill={s.color}
+      fillOpacity={0.9}
+      stroke="var(--surface)"
+      strokeWidth={2}
+      activeDot={false}
+      isAnimationActive={false}
+    />,
+    <Area
+      key={`${s.key}-partial`}
+      dataKey={`${s.key}_partial`}
+      stackId="partial"
+      type="linear"
+      fill={s.color}
+      fillOpacity={0.35}
+      stroke={s.color}
+      strokeWidth={2}
+      strokeDasharray="4 4"
+      activeDot={false}
+      legendType="none"
+      isAnimationActive={false}
+    />,
+  ]
 }

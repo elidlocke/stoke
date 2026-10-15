@@ -212,6 +212,10 @@ export interface TrendMonth {
   new_customers: number // first successful payment or subscription this month
   churned: number // subscribers whose access ended this month, with no other subscription running
   take_home: number // from payments made this month, after refunds, fees and disputes
+  // take_home split by where it came from; the three add up to it.
+  take_home_subscriptions: number
+  take_home_newsletter_other: number // gifts, and one-offs made through the newsletter's platform
+  take_home_other_streams: number // sales on the writer's other revenue streams, and anything else
 }
 
 export interface TrendsResponse {

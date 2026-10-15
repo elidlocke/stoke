@@ -216,6 +216,10 @@ class TrendMonthOut(_Out):
     new_customers: int  # first successful payment or subscription this month
     churned: int  # subscribers whose access ended this month, with no other subscription running
     take_home: int  # from payments made this month, after refunds, fees and disputes. Minor units of reporting_currency
+    # take_home split by where it came from; the three add up to it.
+    take_home_subscriptions: int  # subscription payments
+    take_home_newsletter_other: int  # the newsletter's one-offs: gifts, and payments its platform made
+    take_home_other_streams: int  # sales on the writer's other revenue streams, and anything else
 
 
 class TrendsResponse(_Out):

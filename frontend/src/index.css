@@ -243,6 +243,15 @@ main {
   font-size: 13px;
   margin: 8px 0 0;
 }
+.card-substat {
+  font-size: 14px;
+  margin: -4px 0 8px;
+}
+.chart-tooltip-total {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
 .delta {
   font-size: 14px;
   font-weight: 600;

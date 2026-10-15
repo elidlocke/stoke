@@ -1,9 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import service
+from app import profile, service
 from app.auth import UserDep
+from app.db import get_session
 from app.models import (
     AccountsResponse,
     AnniversariesResponse,
@@ -19,6 +21,8 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/api")
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @router.get("/accounts")
 async def get_accounts(user: UserDep) -> AccountsResponse:
@@ -69,8 +73,8 @@ async def get_at_risk(user: UserDep, account: str | None = None, refresh: bool =
 
 
 @router.get("/trends")
-async def get_trends(user: UserDep, refresh: bool = False) -> TrendsResponse:
-    return await service.trends(user, refresh)
+async def get_trends(user: UserDep, session: SessionDep, refresh: bool = False) -> TrendsResponse:
+    return await service.trends(user, await profile.labels(session, user), refresh)
 
 
 @router.get("/customers/{customer_id}")

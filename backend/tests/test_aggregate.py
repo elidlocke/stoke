@@ -520,3 +520,26 @@ def test_trends():
         (ts(2026, 2, 1), False, 0, 0, 4825),
         (ts(2026, 3, 1), True, 1, 1, 4825),  # bo is new; cy left
     ]
+
+
+def test_trends_take_home_by_source():
+    now = datetime(2026, 3, 20, tzinfo=UTC)
+    paid = usd([
+        norm(make_pi(id="pi_sub", created=ts(2026, 3, 2)), make_invoice("pi_sub", billing_reason="subscription_cycle")),
+        # A Substack gift: a one-off invoice, not a sale on another platform.
+        norm(make_pi(id="pi_gift", created=ts(2026, 3, 3), description="Notes subscription gift for bo@x.com")),
+        # A one-off through the newsletter's own application, e.g. a founding-member top-up.
+        norm(make_pi(id="pi_substack", created=ts(2026, 3, 4), application="ca_substack")),
+        # Sales elsewhere: a course platform's application, and a payment made directly.
+        norm(make_pi(id="pi_course", created=ts(2026, 3, 5), application="ca_course")),
+        norm(make_pi(id="pi_direct", created=ts(2026, 3, 6))),
+    ])
+    [m] = aggregate.trends(paid, [], now, months=1, newsletter_apps={"ca_substack"})
+    assert (m.take_home_subscriptions, m.take_home_newsletter_other, m.take_home_other_streams) == (
+        4825, 2 * 4825, 2 * 4825,
+    )
+    assert m.take_home_subscriptions + m.take_home_newsletter_other + m.take_home_other_streams == m.take_home
+
+    # Until the writer confirms the newsletter's application, its one-offs count as another stream's.
+    [m] = aggregate.trends(paid, [], now, months=1)
+    assert (m.take_home_newsletter_other, m.take_home_other_streams) == (4825, 3 * 4825)

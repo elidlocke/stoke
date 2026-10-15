@@ -303,7 +303,7 @@ async def at_risk(user: CurrentUser, account_id: str | None, refresh: bool) -> A
     )
 
 
-async def trends(user: CurrentUser, refresh: bool) -> TrendsResponse:
+async def trends(user: CurrentUser, labels: library.Labels, refresh: bool) -> TrendsResponse:
     scope = await get_scope(user, refresh=refresh)
     # The full history, to tell a first purchase from a returning customer.
     payments = await _payments(scope.accounts, None, scope.reporting_currency, refresh)
@@ -311,10 +311,11 @@ async def trends(user: CurrentUser, refresh: bool) -> TrendsResponse:
         subs, churn_available = await _subscriptions(scope.accounts, refresh), True
     except MissingPermission:
         subs, churn_available = [], False
+    newsletter_apps = {app for app, label in labels.applications.items() if label == library.NEWSLETTER}
 
     return TrendsResponse(
         reporting_currency=scope.reporting_currency,
-        months=[TrendMonthOut(**asdict(m)) for m in aggregate.trends(payments, subs, datetime.now(UTC))],
+        months=[TrendMonthOut(**asdict(m)) for m in aggregate.trends(payments, subs, datetime.now(UTC), newsletter_apps=newsletter_apps)],
         churn_available=churn_available,
         unconverted_count=aggregate.unconverted_count(payments),
     )

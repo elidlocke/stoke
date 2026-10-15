@@ -7,7 +7,7 @@ import pytest
 import stripe
 from fastapi.testclient import TestClient
 
-from app import fetch, fx, service
+from app import fetch, fx, profile, service
 from app.actions import Labels, RevenueSource
 from app.routers import actions as actions_router
 from app.aggregate import normalize_payment, normalize_subscription
@@ -79,6 +79,11 @@ def client(monkeypatch):
     monkeypatch.setattr(fetch, "payments_since", payments_since)
     monkeypatch.setattr(fetch, "subscriptions", subscriptions)
     monkeypatch.setattr(fx, "get_rates", get_rates)
+
+    async def labels(session, user):
+        return Labels()
+
+    monkeypatch.setattr(profile, "labels", labels)
     app.dependency_overrides[current_user] = lambda: USER
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
@@ -290,6 +295,8 @@ def test_trends_shape(client):
     assert (len(body["months"]), body["churn_available"]) == (12, True)
     assert [m["partial"] for m in body["months"]] == [False] * 11 + [True]
     assert sum(m["take_home"] for m in body["months"]) == 0  # the fixture's payments are from 2025
+    sources = ("take_home_subscriptions", "take_home_newsletter_other", "take_home_other_streams")
+    assert all(sum(m[k] for k in sources) == m["take_home"] for m in body["months"])
 
 
 def test_trends_without_subscriptions_access(client, monkeypatch):

@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from app import aggregate
-from app.aggregate import CURRENT_STATUSES, NEVER_STARTED, OPEN_DISPUTE_STATUSES, Payment, Subscription
+from app.aggregate import CURRENT_STATUSES, NEVER_STARTED, OPEN_DISPUTE_STATUSES, Payment, Subscription, is_gift
 
 DAY = 86400
 
@@ -393,15 +393,6 @@ def welcome_back(f: Facts) -> list[Candidate]:
             why = f"Came back {_ago(c.current.started, f.now)}, after canceling in {_month(c.sub.canceled_at or c.sub.started)}"
             out.append(f.candidate(c.current.email or "", c.current.account_id, why, c.current.plan, c.current.started))
     return _by_value(out)
-
-
-_GIFT = re.compile(r"\bgift\b", re.IGNORECASE)
-
-
-def is_gift(p: Payment) -> bool:
-    """A subscription bought for someone else: on Substack, a one-off invoice for
-    "<publication> subscription gift for <their email>"."""
-    return not (p.billing_reason or "").startswith("subscription") and bool(_GIFT.search(p.description or ""))
 
 
 def gift_thanks(f: Facts) -> list[Candidate]:
