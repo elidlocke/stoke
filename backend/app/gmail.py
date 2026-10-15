@@ -1,10 +1,9 @@
 """Sending notes from the writer's own Gmail, with the gmail.send scope only.
 
 Connecting is Google's OAuth authorization-code flow with PKCE:
-1. `authorization_url` gives the frontend Google's consent page, with a `state` that names the signed-in
-   user and expires, signed with a key derived from CUSTOMER_ID_SECRET. The PKCE verifier is derived from
-   the state's nonce, so nothing is stored server-side while the writer is at Google. The nonce is also set
-   as a short-lived cookie in the writer's browser (routers/gmail.py).
+1. `authorization_url` gives the frontend Google's consent page, with a signed `state` (app/oauth_state.py).
+   The PKCE verifier is derived from the state's nonce, so nothing is stored server-side while the writer is
+   at Google. The nonce is also set as a short-lived cookie in the writer's browser (routers/gmail.py).
 2. Google sends the writer's browser back to the API's GET /api/gmail/callback (Settings.gmail_redirect_uri),
    which then redirects to Settings. Google's code never reaches the frontend's URL, where the Auth0 SDK
    would take it for its own sign-in, and connecting doesn't depend on the Auth0 session surviving the trip.
@@ -22,12 +21,9 @@ Notes are sent as plain-text RFC 822 messages through users.messages.send. They 
 Sent folder, and replies go to them. Stoke never reads their mail.
 """
 
-import base64
 import hashlib
 import hmac
-import json
 import logging
-import secrets
 import time
 import uuid
 from dataclasses import dataclass
@@ -40,7 +36,7 @@ import httpx
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import customer_id
+from app import customer_id, oauth_state
 from app.auth import CurrentUser
 from app.config import get_settings
 from app.crypto import get_cipher
@@ -54,7 +50,8 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 SCOPES = ["openid", "email", SEND_SCOPE]
-STATE_TTL_SECONDS = 600
+STATE_TTL_SECONDS = oauth_state.TTL_SECONDS
+STATE_PURPOSE = "gmail-oauth-state"
 TIMEOUT = 15
 
 
@@ -101,15 +98,7 @@ def configured() -> bool:
 
 
 def _b64(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def _unb64(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
-
-
-def _sign(payload: str) -> str:
-    return _b64(hmac.new(customer_id.subkey("gmail-oauth-state"), payload.encode(), hashlib.sha256).digest())
+    return oauth_state.b64(raw)
 
 
 def _verifier(nonce: str) -> str:
@@ -117,31 +106,20 @@ def _verifier(nonce: str) -> str:
     return _b64(hmac.new(customer_id.subkey("gmail-pkce"), nonce.encode(), hashlib.sha256).digest())
 
 
-def _state(user: CurrentUser, now: float | None = None) -> tuple[str, str]:
-    nonce = secrets.token_urlsafe(16)
-    payload = _b64(json.dumps({"u": str(user.id), "n": nonce, "e": int((now or time.time()) + STATE_TTL_SECONDS)}).encode())
-    return f"{payload}.{_sign(payload)}", nonce
-
-
 def check_state(state: str, browser_nonce: str | None) -> tuple[uuid.UUID, str]:
-    """(user id, nonce) for a `state` Stoke signed, that hasn't expired, returning to the browser that started it
-    (whose cookie holds `browser_nonce`)."""
-    invalid = GmailError("That Gmail sign-in couldn't be checked. Start again from Settings.", "invalid")
-    payload, _, sig = state.partition(".")
-    if not sig or not hmac.compare_digest(sig, _sign(payload)):
-        raise invalid
-    data = json.loads(_unb64(payload))
-    if not browser_nonce or not hmac.compare_digest(browser_nonce, data["n"]):
-        raise invalid
-    if data["e"] < time.time():
-        raise GmailError("That Gmail sign-in took too long. Start again from Settings.", "expired")
-    return uuid.UUID(data["u"]), data["n"]
+    """(user id, nonce) for a `state` Stoke signed (app/oauth_state.py)."""
+    try:
+        return oauth_state.check(STATE_PURPOSE, state, browser_nonce)
+    except oauth_state.InvalidState:
+        raise GmailError("That Gmail sign-in couldn't be checked. Start again from Settings.", "invalid") from None
+    except oauth_state.ExpiredState:
+        raise GmailError("That Gmail sign-in took too long. Start again from Settings.", "expired") from None
 
 
 def authorization_url(user: CurrentUser) -> tuple[str, str]:
     """Google's consent page, and the flow's nonce for the browser's cookie."""
     client_id, _ = _client()
-    state, nonce = _state(user)
+    state, nonce = oauth_state.make(STATE_PURPOSE, user)
     challenge = _b64(hashlib.sha256(_verifier(nonce).encode()).digest())
     return AUTH_URL + "?" + urlencode({
         "client_id": client_id,

@@ -20,6 +20,7 @@ from app.db_models import StripeAccount, StripeBackfill, StripeCredential, Strip
 from app.main import app
 from app.stripe_client import STRIPE_API_VERSION, Account
 from tests.conftest import (
+    add_key,
     SENSITIVE_CUSTOMER,
     make_charge,
     make_invoice,
@@ -231,7 +232,7 @@ def keys():
 
 async def test_adding_a_key_starts_the_import(db, make_user, keys):
     async with db() as session:
-        await credentials.add(session, await make_user(), KEY_A)
+        await add_key(session, await make_user(), KEY_A)
     assert {b.state for b in (await backfills(db)).values()} == {"pending"}
 
     await run_imports()
@@ -240,12 +241,12 @@ async def test_adding_a_key_starts_the_import(db, make_user, keys):
 
 async def test_second_key_to_an_imported_account_imports_nothing(db, make_user, keys):
     async with db() as session:
-        await credentials.add(session, await make_user(), KEY_A)
+        await add_key(session, await make_user(), KEY_A)
     await run_imports()
     calls = len(keys.calls)
 
     async with db() as session:
-        await credentials.add(session, await make_user(), KEY_A2)
+        await add_key(session, await make_user(), KEY_A2)
     assert {b.state for b in (await backfills(db)).values()} == {"done"}
     assert await sync._claim_backfill() is None
     assert len(keys.calls) - calls == 1 + len(credentials.PERMISSION_CHECKS)  # only the key's own check
@@ -253,7 +254,7 @@ async def test_second_key_to_an_imported_account_imports_nothing(db, make_user, 
 
 async def test_a_key_revoked_mid_import_is_marked_invalid(db, make_user, keys):
     async with db() as session:
-        cred = await credentials.add(session, await make_user(), KEY_A)
+        cred = await add_key(session, await make_user(), KEY_A)
     keys.routes.clear()
     mock_stripe_keys(keys, {})  # Stripe now rejects the key
     await run_imports()
@@ -266,8 +267,8 @@ async def test_a_key_revoked_mid_import_is_marked_invalid(db, make_user, keys):
 async def test_removing_the_last_key_deletes_the_stored_data(db, make_user, keys):
     first, second = await make_user(), await make_user()
     async with db() as session:
-        cred_1 = await credentials.add(session, first, KEY_A)
-        cred_2 = await credentials.add(session, second, KEY_A2)
+        cred_1 = await add_key(session, first, KEY_A)
+        cred_2 = await add_key(session, second, KEY_A2)
     keys.get(f"{API}/customers").mock(return_value=page([SENSITIVE_CUSTOMER], "customers"))
     await run_imports()
     assert await stored(db)
@@ -284,7 +285,7 @@ async def test_removing_the_last_key_deletes_the_stored_data(db, make_user, keys
 async def test_failed_import_is_retried_from_settings(db, make_user, keys):
     user = await make_user()
     async with db() as session:
-        cred = await credentials.add(session, user, KEY_A)
+        cred = await add_key(session, user, KEY_A)
         await session.execute(update(StripeBackfill).values(state="failed", error="x"))
         await session.commit()
         await credentials.retry_sync(session, user, cred.id)
@@ -294,7 +295,7 @@ async def test_failed_import_is_retried_from_settings(db, make_user, keys):
 async def test_reimport_starts_every_import_again(db, make_user, keys):
     user = await make_user()
     async with db() as session:
-        cred = await credentials.add(session, user, KEY_A)
+        cred = await add_key(session, user, KEY_A)
         await session.execute(update(StripeBackfill).values(state="done", count=7, starting_after="cus_7"))
         await session.commit()
         await credentials.reimport(session, user, cred.id)
@@ -456,7 +457,7 @@ async def test_webhook_is_off_without_a_secret(db):
 async def test_views_report_the_import_and_its_progress(db, make_user, keys, api):
     user = await make_user()
     async with db() as session:
-        await credentials.add(session, user, KEY_A)
+        await add_key(session, user, KEY_A)
     app.dependency_overrides[current_user] = lambda: user
     try:
         resp = await api.get("/api/leaderboard")

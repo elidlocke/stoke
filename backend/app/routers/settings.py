@@ -4,12 +4,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, links, profile, service, substack, sync
+from app import credentials, links, profile, service, stripe_app, substack, sync
 from app.auth import CurrentUser, UserDep
 from app.db import get_session
 from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
 from app.models import (
-    AddCredentialRequest,
     CredentialOut,
     CredentialsResponse,
     LinkIn,
@@ -21,7 +20,6 @@ from app.models import (
     PlanLabelIn,
     PlansResponse,
     RenameCredentialRequest,
-    ReplaceKeyRequest,
     SubstackIn,
     SubstackOut,
     SubstackProfileOut,
@@ -72,23 +70,9 @@ async def get_me(user: UserDep) -> MeResponse:
 async def list_credentials(user: UserDep, session: SessionDep) -> CredentialsResponse:
     creds = await credentials.list_for_user(session, user)
     states = await _sync_states(creds)
-    return CredentialsResponse(credentials=[_to_out(c, states[str(c.id)]) for c in creds])
-
-
-@router.post("/credentials", status_code=201)
-async def add_credential(body: AddCredentialRequest, user: UserDep, session: SessionDep) -> CredentialOut:
-    cred = await credentials.add(session, user, body.key.get_secret_value(), body.label)
-    await session.refresh(cred)  # server-set timestamps
-    return await _out(cred)
-
-
-@router.put("/credentials/{credential_id}/key")
-async def replace_credential_key(
-    credential_id: uuid.UUID, body: ReplaceKeyRequest, user: UserDep, session: SessionDep
-) -> CredentialOut:
-    cred = await credentials.replace_key(session, user, credential_id, body.key.get_secret_value())
-    await session.refresh(cred)
-    return await _out(cred)
+    return CredentialsResponse(
+        credentials=[_to_out(c, states[str(c.id)]) for c in creds], connect_available=stripe_app.configured()
+    )
 
 
 @router.patch("/credentials/{credential_id}")

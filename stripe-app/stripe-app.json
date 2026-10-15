@@ -1,0 +1,52 @@
+{
+  "$schema": "https://stripe.com/stripe-app.schema.json",
+  "id": "com.stoke.stoke",
+  "name": "Stoke",
+  "version": "0.0.1",
+  "icon": "./icon.png",
+  "extensions": null,
+  "permissions": [
+    {
+      "permission": "payment_intent_read",
+      "purpose": "Shows your payments and who made them, so Stoke can tell you who to thank."
+    },
+    {
+      "permission": "charge_read",
+      "purpose": "Reads each payment's charge and refunds, to show what you actually took home."
+    },
+    {
+      "permission": "dispute_read",
+      "purpose": "Shows disputed payments that are waiting on your response."
+    },
+    {
+      "permission": "invoice_read",
+      "purpose": "Reads subscription invoices for plan names and failed renewals."
+    },
+    {
+      "permission": "subscription_read",
+      "purpose": "Shows your paid subscribers, renewals and cancellations."
+    },
+    {
+      "permission": "customer_read",
+      "purpose": "Shows who your subscribers and customers are, so you can reach out to them."
+    },
+    {
+      "permission": "balance_transaction_source_read",
+      "purpose": "Reads the fees on each payment, to show what reached your balance."
+    },
+    {
+      "permission": "event_read",
+      "purpose": "Keeps Stoke up to date as payments and subscriptions change."
+    },
+    {
+      "permission": "connected_account_read",
+      "purpose": "Shows your account's name and payout currency in Stoke."
+    }
+  ],
+  "allowed_redirect_uris": [
+    "https://localhost:5173/api/stripe/callback",
+    "https://stoke-y4sf.onrender.com/api/stripe/callback"
+  ],
+  "distribution_type": "public",
+  "stripe_api_access_type": "oauth"
+}

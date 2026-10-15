@@ -4,21 +4,21 @@ import { Link, useLocation } from 'react-router'
 import { api, type Credential } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
+import { useOAuthOutcome, type Outcome } from '../useOAuthOutcome'
 import { GmailSettings } from './SettingsGmail'
 import { AudienceChannels, RevenueStreams } from './SettingsLinks'
 import { Plans } from './SettingsProfile'
 import { SubstackProfile } from './SettingsSubstack'
 
-const PERMISSIONS = [
-  'PaymentIntents',
-  'Invoices',
-  'Charges',
-  'Customers',
-  'Subscriptions',
-  'Balance transactions',
-  'Events',
-  'Accounts',
-]
+// How connecting went, from ?stripe= on Stripe's way back through the API (routers/stripe_app.py).
+const OUTCOMES: Record<string, Outcome> = {
+  connected: { ok: true, message: 'Stripe connected. Stoke is importing your history.' },
+  denied: { ok: false, message: 'Stripe wasn’t connected: you cancelled at Stripe.' },
+  expired: { ok: false, message: 'That Stripe connection took too long. Try connecting again.' },
+  invalid: { ok: false, message: 'That Stripe connection couldn’t be checked. Try connecting again from this browser.' },
+  too_many: { ok: false, message: 'You’ve connected as many Stripe accounts as Stoke allows.' },
+  failed: { ok: false, message: 'Stripe didn’t accept that connection. Try connecting again.' },
+}
 
 export function Settings() {
   useScrollToSection()
@@ -65,6 +65,14 @@ function useInvalidateAll() {
   return () => queryClient.invalidateQueries()
 }
 
+/** Sends the writer to Stripe to install Stoke's app; they come back through the API to Settings. */
+function useConnectStripe() {
+  return useMutation({
+    mutationFn: api.connectStripe,
+    onSuccess: ({ url }) => window.location.assign(url),
+  })
+}
+
 function StripeAccounts() {
   const creds = useQuery({
     queryKey: ['credentials'],
@@ -74,14 +82,17 @@ function StripeAccounts() {
   })
   const list = creds.data?.credentials ?? []
   const { hash } = useLocation()
+  const outcome = useOAuthOutcome('stripe', OUTCOMES, 'failed')
   return (
     <section className="settings-section full">
       <h2 id="stripe">
         2 · Your Stripe accounts {list.some((c) => c.status !== 'invalid') && <Chip tone="ok">Connected</Chip>}
       </h2>
       <p className="muted lede-small">
-        Connect Stripe so Stoke can segment your paid subscribers. Read-only; keys are encrypted and never shown again.
+        Connect Stripe so Stoke can segment your paid subscribers. Stoke installs as a read-only Stripe app: you see
+        exactly what it can read before you approve.
       </p>
+      {outcome && <p className={outcome.ok ? 'muted' : 'error'}>{outcome.message}</p>}
       {creds.isError && <p className="error">{creds.error.message}</p>}
       {list.length > 0 && (
         <div className="table-wrap">
@@ -89,7 +100,7 @@ function StripeAccounts() {
             <thead>
               <tr>
                 <th>Account</th>
-                <th>Key</th>
+                <th>Connection</th>
                 <th>Status</th>
                 <th className="right">Actions</th>
               </tr>
@@ -102,8 +113,8 @@ function StripeAccounts() {
           </table>
         </div>
       )}
-      {creds.isSuccess && <AddCredential first={list.length === 0} />}
-      {/* Arriving from the Welcome page: once a key is in, point back to where the actions are. */}
+      {creds.isSuccess && <ConnectStripe first={list.length === 0} available={creds.data.connect_available} />}
+      {/* Arriving from the Welcome page: once an account is in, point back to where the actions are. */}
       {hash === '#stripe' && list.length > 0 && (
         <p>
           <Link to="/">Back to Home to see your actions →</Link>
@@ -119,14 +130,18 @@ function keyPrefix(c: Credential) {
 
 function Status({ cred }: { cred: Credential }) {
   if (cred.status === 'invalid')
-    return (
+    return cred.key_type === 'oauth' ? (
+      <Chip tone="bad" title="Stoke’s Stripe app was uninstalled from this account, or Stripe stopped its access.">
+        Disconnected in Stripe
+      </Chip>
+    ) : (
       <Chip tone="bad" title="Stripe no longer accepts this key. It may have been rolled or deleted.">
         Rejected by Stripe
       </Chip>
     )
   if (cred.status === 'missing_permissions')
     return (
-      <Chip tone="warn" title={`Grant Read access to: ${cred.missing_permissions.join(', ')}`}>
+      <Chip tone="warn" title={`Stoke can’t read: ${cred.missing_permissions.join(', ')}`}>
         Missing {cred.missing_permissions.join(', ')}
       </Chip>
     )
@@ -160,6 +175,10 @@ function CredentialRow({ cred }: { cred: Credential }) {
   const [editing, setEditing] = useState<Editing>(null)
   const verify = useMutation({ mutationFn: () => api.verifyCredential(cred.id), onSuccess: invalidateAll })
   const reimport = useMutation({ mutationFn: () => api.reimport(cred.id), onSuccess: invalidateAll })
+  const connect = useConnectStripe()
+  const isApp = cred.key_type === 'oauth'
+  // An app that was uninstalled is reconnected; a key that Stripe refused can't be fixed by checking it again.
+  const reconnect = !isApp || cred.status === 'invalid'
 
   return (
     <>
@@ -174,18 +193,22 @@ function CredentialRow({ cred }: { cred: Credential }) {
           </div>
         </td>
         <td>
-          <code>{keyPrefix(cred)}</code>
-          {cred.key_type === 'secret' && (
-            <div>
-              <Chip tone="warn" title="A secret key can change your Stripe account. Stoke only needs to read.">
-                Use a restricted key
-              </Chip>
-            </div>
+          {isApp ? (
+            'Stripe app'
+          ) : (
+            <>
+              <code>{keyPrefix(cred)}</code>
+              <div>
+                <Chip tone="warn" title="Keys added by hand are being replaced by Stoke’s read-only Stripe app.">
+                  Switch to the Stripe app
+                </Chip>
+              </div>
+            </>
           )}
         </td>
         <td className="wrap">
           <Status cred={cred} />
-          {cred.status !== 'ok' && (
+          {cred.status !== 'ok' && !(isApp && cred.status === 'invalid') && (
             <>
               {' '}
               <span className="small">
@@ -199,8 +222,14 @@ function CredentialRow({ cred }: { cred: Credential }) {
           <div className="muted small">Checked {formatRelative(cred.last_verified_at)}</div>
           {verify.isError && <div className="error small">{verify.error.message}</div>}
           {reimport.isError && <div className="error small">{reimport.error.message}</div>}
+          {connect.isError && <div className="error small">{connect.error.message}</div>}
         </td>
         <td className="right actions">
+          {reconnect && (
+            <button className="link" onClick={() => connect.mutate()} disabled={connect.isPending}>
+              {connect.isPending ? 'Opening Stripe…' : isApp ? 'Reconnect' : 'Switch to the Stripe app'}
+            </button>
+          )}
           {cred.status !== 'invalid' && (
             <button
               className="link"
@@ -212,7 +241,7 @@ function CredentialRow({ cred }: { cred: Credential }) {
             </button>
           )}
           <button className="link" onClick={() => setEditing(editing === 'edit' ? null : 'edit')}>
-            Edit
+            Rename
           </button>
           <button className="link danger" onClick={() => setEditing(editing === 'remove' ? null : 'remove')}>
             Remove
@@ -222,7 +251,7 @@ function CredentialRow({ cred }: { cred: Credential }) {
       {editing && (
         <tr className="edit-row">
           <td colSpan={4}>
-            {editing === 'edit' && <EditForm cred={cred} onDone={() => setEditing(null)} />}
+            {editing === 'edit' && <RenameForm cred={cred} onDone={() => setEditing(null)} />}
             {editing === 'remove' && <RemoveConfirm cred={cred} onDone={() => setEditing(null)} />}
           </td>
         </tr>
@@ -231,73 +260,27 @@ function CredentialRow({ cred }: { cred: Credential }) {
   )
 }
 
-/** A password-type field for a Stripe key: not autocompleted, spellchecked or saved by the browser. */
-function KeyInput({
-  value,
-  onChange,
-  autoFocus,
-  required = true,
-  placeholder = 'rk_live_…',
-}: {
-  value: string
-  onChange: (v: string) => void
-  autoFocus?: boolean
-  required?: boolean
-  placeholder?: string
-}) {
-  return (
-    <input
-      type="password"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      autoComplete="off"
-      spellCheck={false}
-      autoCapitalize="off"
-      autoCorrect="off"
-      data-1p-ignore
-      data-lpignore="true"
-      maxLength={255}
-      required={required}
-      autoFocus={autoFocus}
-    />
-  )
-}
-
-/** Rename the account, replace its key, or both. The key is optional: left blank, it's kept. */
-function EditForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
+function RenameForm({ cred, onDone }: { cred: Credential; onDone: () => void }) {
   const invalidateAll = useInvalidateAll()
   const [label, setLabel] = useState(cred.label ?? '')
-  const [key, setKey] = useState('')
   const save = useMutation({
-    mutationFn: async (v: { label: string; key: string }) => {
-      // The key first: if Stripe rejects it, nothing is saved.
-      if (v.key) await api.replaceKey(cred.id, v.key)
-      if (v.label !== (cred.label ?? '')) await api.renameCredential(cred.id, v.label)
-    },
+    mutationFn: (v: string) => api.renameCredential(cred.id, v),
     onSettled: invalidateAll,
     onSuccess: onDone,
   })
   function submit(e: FormEvent) {
     e.preventDefault()
-    save.mutate({ label: label.trim(), key: key.trim() })
-    setKey('') // clear the field once sent
+    save.mutate(label.trim())
   }
   return (
-    <form className="form-grid" onSubmit={submit}>
-      <label className="half">
+    <form className="inline-form" onSubmit={submit}>
+      <label>
         Name shown in Stoke
         <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={cred.display_name} maxLength={100} autoFocus />
       </label>
-      <label className="half">
-        New key <span className="muted">(optional)</span>
-        <KeyInput value={key} onChange={setKey} required={false} placeholder={keyPrefix(cred)} />
-      </label>
-      <div className="form-buttons full">
-        <button className="primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="ghost" onClick={onDone}>Cancel</button>
-      </div>
-      {save.isError && <p className="error full">{save.error.message}</p>}
+      <button className="primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</button>
+      <button type="button" className="ghost" onClick={onDone}>Cancel</button>
+      {save.isError && <p className="error">{save.error.message}</p>}
     </form>
   )
 }
@@ -308,8 +291,10 @@ function RemoveConfirm({ cred, onDone }: { cred: Credential; onDone: () => void 
   return (
     <div className="inline-form">
       <span>
-        Remove {cred.label ?? cred.display_name}? Its customers will no longer appear in Stoke. The key is deleted from
-        Stoke; to stop it working entirely, also delete it in your Stripe Dashboard.
+        Remove {cred.label ?? cred.display_name}? Its customers will no longer appear in Stoke.{' '}
+        {cred.key_type === 'oauth'
+          ? 'To stop Stoke’s access entirely, also uninstall Stoke from your Stripe Dashboard’s installed apps.'
+          : 'The key is deleted from Stoke; to stop it working entirely, also delete it in your Stripe Dashboard.'}
       </span>
       <button className="danger" onClick={() => remove.mutate()} disabled={remove.isPending}>
         Remove
@@ -320,56 +305,20 @@ function RemoveConfirm({ cred, onDone }: { cred: Credential; onDone: () => void 
   )
 }
 
-function AddCredential({ first }: { first: boolean }) {
-  const invalidateAll = useInvalidateAll()
-  const [key, setKey] = useState('')
-  const [label, setLabel] = useState('')
-  const add = useMutation({
-    mutationFn: (v: { key: string; label: string }) => api.addCredential(v.key, v.label.trim()),
-    onSuccess: () => {
-      setLabel('')
-      invalidateAll()
-    },
-  })
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    add.mutate({ key: key.trim(), label })
-    setKey('') // clear the field once sent
-  }
-
+function ConnectStripe({ first, available }: { first: boolean; available: boolean }) {
+  const connect = useConnectStripe()
+  if (!available) return <p className="muted">Connecting Stripe isn’t set up on this server yet.</p>
   return (
-    <form className="add-key card form-grid" onSubmit={submit}>
-      <h3 className="full">{first ? 'Add your first Stripe account' : 'Add another Stripe account'}</h3>
-      <ol className="muted steps full">
-        <li>
-          In your Stripe Dashboard, open{' '}
-          <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer">
-            Developers → API keys
-          </a>{' '}
-          and choose <strong>Create restricted key</strong>.
-        </li>
-        <li>Give it <strong>Read</strong> access to: {PERMISSIONS.join(', ')}. Leave everything else as None.</li>
-        <li>Paste the key (it starts with rk_live_) below.</li>
-      </ol>
-      <label className="half">
-        Restricted key
-        <KeyInput value={key} onChange={setKey} />
-      </label>
-      <label className="half">
-        Name <span className="muted">(optional)</span>
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. My newsletter" maxLength={100} />
-      </label>
-      <div className="form-buttons full">
-        <button className="primary" disabled={add.isPending}>{add.isPending ? 'Checking with Stripe…' : 'Add account'}</button>
-      </div>
-      {add.isError && <p className="error full">{add.error.message}</p>}
-      {add.isSuccess && (
-        <p className="muted full">
-          Added {add.data.display_name}.
-          {add.data.missing_permissions.length > 0 &&
-            ` It can't read ${add.data.missing_permissions.join(', ')} yet: grant Read access in Stripe, then choose Re-check.`}
-        </p>
-      )}
-    </form>
+    <div className="connect-stripe card">
+      <h3>{first ? 'Connect your Stripe account' : 'Connect another Stripe account'}</h3>
+      <p className="muted">
+        You’ll choose the account on Stripe and approve Stoke’s read-only access, then come back here. Stoke can’t
+        move money or change anything in Stripe.
+      </p>
+      <button className="primary" disabled={connect.isPending} onClick={() => connect.mutate()}>
+        {connect.isPending ? 'Opening Stripe…' : 'Connect with Stripe'}
+      </button>
+      {connect.isError && <p className="error">{connect.error.message}</p>}
+    </div>
   )
 }

@@ -6,7 +6,7 @@ details, addresses, phone numbers, metadata, receipt URLs or Stripe error bodies
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Period = Literal["1m", "3m", "6m", "12m", "all"]
 # Lookback window for the event lists: past week, month or 3 months.
@@ -380,7 +380,7 @@ class SyncStatusResponse(_Out):
 
 
 # --- Settings -------------------------------------------------------------------------------------
-# A stored key is never returned, only its last four characters.
+# A stored secret is never returned: for a key, only its last four characters.
 
 
 class MeResponse(_Out):
@@ -390,13 +390,15 @@ class MeResponse(_Out):
 class CredentialOut(_Out):
     id: str
     label: str | None
-    stripe_account_id: str | None  # None when the key can't read its own account
+    stripe_account_id: str | None  # None when a key can't read its own account
     display_name: str
     settlement_currency: str
     livemode: bool
-    key_type: Literal["restricted", "secret"]
-    key_last4: str
-    # ok; missing_permissions: works, but some views are limited; invalid: Stripe rejected the key
+    # oauth: connected with the Stripe App. restricted, secret: a key added before the app.
+    key_type: Literal["oauth", "restricted", "secret"]
+    key_last4: str | None  # keys only
+    # ok; missing_permissions: works, but some views are limited; invalid: Stripe refused the key, or the app was
+    # uninstalled
     status: Literal["ok", "missing_permissions", "invalid"]
     missing_permissions: list[str]
     created_at: int  # unix seconds
@@ -406,6 +408,11 @@ class CredentialOut(_Out):
 
 class CredentialsResponse(_Out):
     credentials: list[CredentialOut]
+    connect_available: bool  # whether this server can connect Stripe accounts (the Stripe App is configured)
+
+
+class StripeConnectOut(_Out):
+    url: str  # the Stripe App's install page
 
 
 class UserSettingsOut(_Out):
@@ -414,15 +421,6 @@ class UserSettingsOut(_Out):
 
 class _In(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-class AddCredentialRequest(_In):
-    key: SecretStr = Field(max_length=255)
-    label: str | None = Field(None, max_length=100)
-
-
-class ReplaceKeyRequest(_In):
-    key: SecretStr = Field(max_length=255)
 
 
 class RenameCredentialRequest(_In):

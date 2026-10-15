@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { api } from '../api'
 import { Chip } from '../components/Chip'
 import { formatRelative } from '../format'
+import { useOAuthOutcome, type Outcome } from '../useOAuthOutcome'
 
 // How connecting went, from ?gmail= on Google's way back through the API (routers/gmail.py).
-const OUTCOMES: Record<string, { ok: boolean; message: string }> = {
+const OUTCOMES: Record<string, Outcome> = {
   connected: { ok: true, message: 'Gmail connected.' },
   denied: { ok: false, message: 'Gmail wasn’t connected: you cancelled at Google.' },
   no_permission: {
@@ -16,21 +16,6 @@ const OUTCOMES: Record<string, { ok: boolean; message: string }> = {
   expired: { ok: false, message: 'That Gmail sign-in took too long. Try connecting again.' },
   invalid: { ok: false, message: 'That Gmail sign-in couldn’t be checked. Try connecting again from this browser.' },
   failed: { ok: false, message: 'Google didn’t accept that sign-in. Try connecting again.' },
-}
-
-/** The outcome Google's return left in the URL, shown once: the parameter is then removed. */
-function useOutcome() {
-  const [params, setParams] = useSearchParams()
-  const [outcome] = useState(() => {
-    const value = params.get('gmail')
-    return value ? (OUTCOMES[value] ?? OUTCOMES.failed) : null
-  })
-  useEffect(() => {
-    if (!params.has('gmail')) return
-    params.delete('gmail')
-    setParams(params, { replace: true, preventScrollReset: true })
-  }, [params, setParams])
-  return outcome
 }
 
 export function useGmail() {
@@ -55,7 +40,7 @@ export function GmailSettings() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gmail'] }),
   })
   const g = gmail.data
-  const outcome = useOutcome()
+  const outcome = useOAuthOutcome('gmail', OUTCOMES, 'failed')
 
   return (
     <section className="settings-section full">

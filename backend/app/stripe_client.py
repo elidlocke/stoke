@@ -1,9 +1,10 @@
 """Which Stripe accounts are in a user's scope, and the credentials used to read each one.
 
 Two ways to reach an account, usable together:
-- "own_key": a key the creator issued from their own Stripe account (e.g. a Substack author's
-  Standard account), stored encrypted per user (see app/credentials.py). The production path,
-  since creators don't own the platform.
+- "own_key": the creator's own Stripe account (e.g. a Substack author's Standard account), read with
+  Stoke's Stripe App installed on it (app/stripe_app.py), or a key they issued before the app existed.
+  Stored encrypted per user (see app/credentials.py). The production path, since creators don't own
+  the platform.
 - "platform"/"connected": a Connect platform key from .env; connected accounts via the
   Stripe-Account header. Local development and simulation only (DEV_MODE).
 """
@@ -16,6 +17,7 @@ import stripe
 from cachetools import TTLCache
 from sqlalchemy import select
 
+from app import stripe_app
 from app.auth import CurrentUser
 from app.config import get_settings
 from app.crypto import get_cipher
@@ -129,9 +131,19 @@ def clear_scope_cache(user_id: object | None = None) -> None:
         _scope_cache.pop(str(user_id), None)
 
 
+async def _secret(c: StripeCredential) -> str | None:
+    """The API key to read a credential's account with: the Stripe App's current access token, or the stored
+    key. None if the app was uninstalled (the credential is then marked invalid)."""
+    if c.is_app:
+        try:
+            return await stripe_app.access_token(c)
+        except stripe_app.AppDisconnected:
+            return None
+    return await get_cipher().decrypt(c.sealed, c.aad)
+
+
 async def own_key_accounts(creds: list[StripeCredential]) -> list[Account]:
-    cipher = get_cipher()
-    keys = await asyncio.gather(*(cipher.decrypt(c.sealed, c.aad) for c in creds))
+    keys = await asyncio.gather(*(_secret(c) for c in creds))
     return [
         Account(
             id=credential_account_id(c),
@@ -144,6 +156,7 @@ async def own_key_accounts(creds: list[StripeCredential]) -> list[Account]:
             missing_permissions=tuple(c.missing_permissions),
         )
         for c, key in zip(creds, keys)
+        if key is not None
     ]
 
 
@@ -162,7 +175,7 @@ async def get_scope(user: CurrentUser, refresh: bool = False) -> AccountScope:
 
     platform_key = get_settings().dev_platform_key
     if not creds and platform_key is None:
-        raise NoCredentials("Add a Stripe key in Settings to see your customers.")
+        raise NoCredentials("Connect Stripe in Settings to see your customers.")
 
     platform: Account | None = None
     accounts: list[Account] = []
@@ -171,6 +184,8 @@ async def get_scope(user: CurrentUser, refresh: bool = False) -> AccountScope:
         accounts = ([platform] if get_settings().include_platform else []) + connected
 
     own = await own_key_accounts(creds)
+    if not own and platform_key is None:  # each one's Stripe App was uninstalled
+        raise NoCredentials("Connect Stripe in Settings to see your customers.")
     # An account reachable both ways is read once, preferring its own key.
     own_ids = {a.id for a in own}
     accounts = [a for a in accounts if a.id not in own_ids] + own

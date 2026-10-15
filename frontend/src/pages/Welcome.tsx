@@ -10,7 +10,7 @@ const EXAMPLES = [
 
 const STEPS = [
   { title: 'Connect your Substack', body: 'Your handle. Stoke finds your links and what else you sell on your profile.' },
-  { title: 'Connect Stripe', body: 'Read-only. Your key is encrypted before it’s stored.' },
+  { title: 'Connect Stripe', body: 'Install Stoke’s Stripe app. It can only read, and you can remove it any time.' },
   { title: 'Check what Stoke found', body: 'Your plans, revenue streams and channels: confirm or correct Stoke’s guesses.' },
   { title: 'Start engaging', body: 'Connect Gmail, approve a note once, and Stoke lines up who to send it to.' },
 ]

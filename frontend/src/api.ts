@@ -368,18 +368,21 @@ export interface SyncStatus {
 }
 
 // --- Settings ---------------------------------------------------------------------------------
-// A stored key is never returned, only its last four characters.
+// A stored secret is never returned: for a key, only its last four characters.
 
+/** A connected Stripe account. */
 export interface Credential {
   id: string
   label: string | null
-  stripe_account_id: string | null // null when the key can't read its own account
+  stripe_account_id: string | null // null when a key can't read its own account
   display_name: string
   settlement_currency: string
   livemode: boolean
-  key_type: 'restricted' | 'secret'
-  key_last4: string
-  // ok; missing_permissions: works, but some views are limited; invalid: Stripe rejected the key
+  // oauth: connected with Stoke's Stripe App. restricted, secret: a key added before the app.
+  key_type: 'oauth' | 'restricted' | 'secret'
+  key_last4: string | null // keys only
+  // ok; missing_permissions: works, but some views are limited; invalid: Stripe refused the key, or the app was
+  // uninstalled
   status: 'ok' | 'missing_permissions' | 'invalid'
   missing_permissions: string[]
   created_at: number
@@ -567,10 +570,9 @@ export const api = {
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
   me: () => get<{ email: string | null }>('/api/me'),
-  credentials: () => get<{ credentials: Credential[] }>('/api/credentials'),
-  addCredential: (key: string, label?: string) =>
-    request<Credential>('POST', '/api/credentials', { body: { key, label: label || null } }),
-  replaceKey: (id: string, key: string) => request<Credential>('PUT', `/api/credentials/${id}/key`, { body: { key } }),
+  // connect_available: whether this server can connect Stripe accounts (its Stripe App is set up)
+  credentials: () => get<{ credentials: Credential[]; connect_available: boolean }>('/api/credentials'),
+  connectStripe: () => request<{ url: string }>('POST', '/api/stripe/connect'),
   renameCredential: (id: string, label: string) =>
     request<Credential>('PATCH', `/api/credentials/${id}`, { body: { label: label || null } }),
   verifyCredential: (id: string) => request<Credential>('POST', `/api/credentials/${id}/verify`),

@@ -1,0 +1,6 @@
+{
+  "name": "stoke-stripe-app",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Stoke's Stripe App: OAuth install only, no Dashboard UI. The CLI packages it as a Node project, so it needs this file and a lockfile."
+}

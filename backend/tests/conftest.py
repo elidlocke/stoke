@@ -17,6 +17,8 @@ os.environ["SYNC_WORKER"] = "false"
 os.environ["GOOGLE_CLIENT_ID"] = "stoke-test.apps.googleusercontent.com"
 os.environ["GOOGLE_CLIENT_SECRET"] = "google-test-secret"
 os.environ["CORS_ORIGIN"] = "http://localhost:5173"
+os.environ["STRIPE_APP_INSTALL_URL"] = "https://marketplace.stripe.com/oauth/v2/chnlink_test/authorize?client_id=ca_stoke"
+os.environ["STRIPE_APP_SECRET_KEY"] = "sk_test_stoke_app"
 # A Postgres server for the tests that need one (docker compose up -d); they use their own database.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://stoke:stoke@127.0.0.1:5432/stoke_test"
@@ -31,11 +33,13 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 
 from app import db as app_db  # noqa: E402
-from app import fetch, gmail, sync  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
+
+from app import credentials, fetch, gmail, stripe_app, sync  # noqa: E402
 from app.auth import CurrentUser, clear_jwks_cache  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.crypto import get_cipher  # noqa: E402
-from app.db_models import User  # noqa: E402
+from app.db_models import StripeCredential, User  # noqa: E402
 from app.stripe_client import clear_scope_cache  # noqa: E402
 
 SENSITIVE_CUSTOMER = {
@@ -219,6 +223,8 @@ def _clear():
     get_cipher.cache_clear()
     clear_jwks_cache()
     gmail.clear_cache()
+    stripe_app.clear_cache()
+    stripe_app._locks.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -282,6 +288,26 @@ def make_user(db):
 
 
 # --- Stripe keys ----------------------------------------------------------------------------------
+
+
+async def add_key(session, user: CurrentUser, raw: str, label: str | None = None) -> StripeCredential:
+    """A Stripe account added with a key, as Settings did before the Stripe App (those keep working)."""
+    p = await credentials.probe(raw)
+    cred = StripeCredential(id=uuid.uuid4(), user_id=user.id, label=label)
+    sealed = await get_cipher().encrypt(raw, cred.aad)
+    cred.ciphertext, cred.wrapped_dek, cred.cipher = sealed.ciphertext, sealed.wrapped_dek, sealed.cipher
+    cred.key_type = "secret" if raw.startswith("sk_") else "restricted"
+    cred.livemode, cred.key_last4 = "_live_" in raw, raw[-4:]
+    cred.stripe_account_id, cred.display_name = p.stripe_account_id, p.display_name
+    cred.settlement_currency = p.settlement_currency
+    cred.status = "missing_permissions" if p.missing_permissions else "ok"
+    cred.missing_permissions, cred.last_verified_at = p.missing_permissions, datetime.now(UTC)
+    session.add(cred)
+    await session.commit()
+    clear_scope_cache(user.id)
+    await credentials.start_sync(cred)
+    return cred
+
 
 RESOURCES = {
     "PaymentIntents": "payment_intents",

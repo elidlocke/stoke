@@ -17,9 +17,11 @@ A home base for a creator's customers across one or more Stripe accounts. It's a
 The three event lists (New customers, Anniversaries, Cancellations) can be filtered to the past week, month or 3 months, and by account.
 
 ## How it reaches Stripe accounts
-A creator doesn't own the platform they sell through. What they have is their own Stripe account, connected to the platform. Each signed-in user adds a restricted, read-only key for each of their Stripe accounts on the **Settings** page (`/settings`). Every view aggregates only that user's accounts.
+A creator doesn't own the platform they sell through. What they have is their own Stripe account, connected to the platform. Each signed-in user connects each of their Stripe accounts on the **Settings** page (`/settings`) with **Connect with Stripe**: it installs Stoke's Stripe App on the account, through Stripe's OAuth install flow, with read-only permissions (`stripe-app/stripe-app.json`). Every view aggregates only that user's accounts.
 
-When a key is added, Stoke checks it with Stripe: which account it belongs to, and which of the permissions below it lacks. A key is refused if it's a publishable key, a live secret key (it could move money, and Stoke only reads), a key Stripe rejects, or a second key for an account already added (use **Replace key** to rotate a key). A key that's missing permissions is still accepted, and Settings lists what to grant before you choose **Re-check**. Later, a Stripe App with OAuth would replace hand-issued keys.
+When an account is connected, Stoke checks with Stripe which of the permissions it needs it lacks; Settings lists any that are missing. Stoke stores the app's refresh token encrypted, and uses short-lived access tokens to read (`backend/app/stripe_app.py`). Uninstalling the app in Stripe disconnects the account, and Settings offers **Reconnect**. Setting up the app, once per deployment: [docs/stripe-app-setup.md](docs/stripe-app-setup.md).
+
+Accounts added before the app, with a restricted key, keep working. Settings shows them with **Switch to the Stripe app**, which converts them in place. New keys can't be added.
 
 For local development, `DEV_MODE=true` with `STRIPE_PLATFORM_KEY` adds your own Connect platform's connected accounts to *every* user's view, to simulate creators.
 
@@ -56,7 +58,7 @@ The API and the scripts load `.env` with python-dotenv, whatever directory you r
 
 ### Auth0
 1. Create an **API** (Applications → APIs). Its identifier is the audience: put it in `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE`. Keep RS256 signing. Turn on **Allow Offline Access**, so the app can use refresh tokens.
-2. Create a **Single Page Application**. Put its domain in `AUTH0_DOMAIN` and `VITE_AUTH0_DOMAIN`, and its client ID in `VITE_AUTH0_CLIENT_ID`. Set Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins to `http://localhost:5173`. Under Refresh Token Rotation, turn on **Allow Refresh Token Rotation**.
+2. Create a **Single Page Application**. Put its domain in `AUTH0_DOMAIN` and `VITE_AUTH0_DOMAIN`, and its client ID in `VITE_AUTH0_CLIENT_ID`. Set Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins to `https://localhost:5173`. Under Refresh Token Rotation, turn on **Allow Refresh Token Rotation**.
 3. Access tokens don't include the user's email. To show it, add a Post-Login **Action** and deploy it to the Login flow:
    ```js
    exports.onExecutePostLogin = async (event, api) => {
@@ -103,20 +105,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --reload
 ```
 `--reload` picks up edits to existing files, but after pulling new code or dependencies, stop it (Ctrl+C) and start it again.
 
-### Stripe keys
-Sign in, open **Settings**, and add a **restricted, read-only key** (Dashboard → Developers → API keys → Create restricted key) for each account, with **Read** access to:
-- PaymentIntents
-- Invoices
-- Charges
-- Customers
-- Subscriptions (Anniversaries and Cancellations need it, and say which permission is missing without it. New customers then lists only customers who've paid, not unpaid trials.)
-- Balance transactions
-- Accounts (Stripe calls this `connected_account_read`). The app still works without it, but it shows "Stripe account" instead of the account's name, and can't tell when the same account is added twice.
-
-**Moving keys out of `.env`.** If your `.env` still has keys in `STRIPE_ACCOUNT_KEYS` or `STRIPE_API_KEY` from before, sign in once, then run the following. It runs each key through the same checks as Settings. Then delete those settings from `.env`.
-```sh
-cd backend && uv run python scripts/import_env_keys.py --email you@example.com
-```
+### Connecting Stripe
+Set up Stoke's Stripe App and its webhook as in [docs/stripe-app-setup.md](docs/stripe-app-setup.md), then sign in, open **Settings**, and choose **Connect with Stripe**.
 
 ### Seed a sandbox with test customers
 1. Put the sandbox's **secret** test key (`sk_test_…`) in `STRIPE_SEED_KEY`. The script refuses live keys.
@@ -148,7 +138,7 @@ Stripe can't backdate payments, so everything is dated "now" and there are no re
 ```sh
 cd frontend
 npm install
-npm run dev   # http://localhost:5173, proxies /api to 127.0.0.1:8000
+npm run dev   # https://localhost:5173 (self-signed: trust it once in the browser), proxies /api to 127.0.0.1:8000
 ```
 
 ### Tests
@@ -172,6 +162,7 @@ Stoke deploys to [Render](https://render.com) as one web service (the `Dockerfil
 2. Render asks for the settings marked `sync: false`:
    - `STOKE_ENCRYPTION_KEY` and `CUSTOMER_ID_SECRET`: **new** values, not your local ones. Generate them as under Configuration, and save them in a password manager.
    - `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and the three `VITE_AUTH0_*` values: the same as in your `.env`.
+   - `STRIPE_APP_INSTALL_URL`, `STRIPE_APP_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: see [docs/stripe-app-setup.md](docs/stripe-app-setup.md). The webhook secret is Render's own, not the one `stripe listen` prints locally.
 3. Once the service exists, check its address. If it isn't `stoke.onrender.com`, update `ALLOWED_HOSTS` and `CORS_ORIGIN` in the service's Environment settings (and in `render.yaml`).
 4. In Auth0, add `https://<service>.onrender.com` to the application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins.
 
@@ -183,14 +174,14 @@ Plans: the database uses a paid plan, since free Render databases expire after 3
 
 ## Security notes
 - **Sign-in is through Auth0.** Every API route needs an Auth0 access token, checked against the tenant's signing keys. The checks cover signature (RS256 only), issuer, audience and expiry. Users are created on first sign-in. A user's keys, settings and customer data are only reachable with that user's token, and another user's key id returns 404. Tokens are sent as a bearer header, not a cookie, so there's no CSRF. Requests whose `Host` isn't in `ALLOWED_HOSTS` are refused, which blocks DNS rebinding. Every response is `Cache-Control: no-store`.
-- **Stripe keys are encrypted at rest** with envelope encryption (`backend/app/crypto.py`):
+- **Stripe secrets (the app's refresh tokens, and keys added before the app) are encrypted at rest** with envelope encryption (`backend/app/crypto.py`):
   - Each key is encrypted with AES-256-GCM under its own random data key, and that data key is encrypted by a master key. Only ciphertext reaches Postgres, so a database dump or backup alone reveals nothing.
   - Both layers are bound to the key's owner and record, so ciphertext copied onto another row or user won't decrypt.
-  - Keys are never returned by the API, only their last four characters. The 422 error for a malformed request doesn't echo its input.
+  - Secrets are never returned by the API; for a key, only its last four characters. The 422 error for a malformed request doesn't echo its input.
   - Decrypted keys exist only in the backend's memory while it reads from Stripe.
   - **Master key with `KEY_CIPHER=local`:** `STOKE_ENCRYPTION_KEY`, from `.env` locally or from Render's environment in production. **Back it up** alongside `CUSTOMER_ID_SECRET`: if it's lost, stored keys can't be read, and every user has to add their keys again. On Render, the master key sits in the service's environment variables, so anyone with access to the Render service can read it.
   - **Master key, in production:** set `KEY_CIPHER=aws_kms` and `AWS_KMS_KEY_ID`. The master key then never leaves KMS, and every unwrap is permissioned and logged by CloudTrail. Records name the scheme that sealed them, so moving from `local` to KMS means re-encrypting existing keys (or having users re-add them).
-- **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, `CUSTOMER_ID_SECRET`. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing a future Stripe App. Back it up with `STOKE_ENCRYPTION_KEY`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
+- **URLs carry no PII.** Profile links (and the API path behind them) use an opaque customer id: an HMAC of the email, truncated to 24 hex characters. Neither the email nor any Stripe id appears in URLs, browser history or access logs. The key is a random secret, `CUSTOMER_ID_SECRET`. It's deliberately independent of API keys and of which accounts are connected, so links survive key rotation and creators installing or removing the Stripe App. Back it up with `STOKE_ENCRYPTION_KEY`: losing it changes every customer link. Account filters (`?account=acct_…`) still name the creator's own Stripe account, not a customer.
 - Responses are built only from the Pydantic models in `backend/app/models.py`, and raw Stripe objects are never returned. Stripe errors are logged on the server and returned as a generic 502.
 
 ## Limitations

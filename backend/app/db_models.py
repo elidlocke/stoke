@@ -34,7 +34,9 @@ class UserSettings(Base):
 
 
 class StripeCredential(Base):
-    """A key a user issued from one of their Stripe accounts. The key itself is only stored encrypted."""
+    """How a user reads one of their Stripe accounts: Stoke's Stripe App installed on it (key_type "oauth", whose
+    stored secret is the app's refresh token, see app/stripe_app.py), or, for accounts added before the app, a
+    key they issued. The secret is only stored encrypted."""
 
     __tablename__ = "stripe_credentials"
     __table_args__ = (UniqueConstraint("user_id", "stripe_account_id"),)
@@ -47,10 +49,10 @@ class StripeCredential(Base):
     display_name: Mapped[str] = mapped_column(Text)
     settlement_currency: Mapped[str] = mapped_column(String(3))
     livemode: Mapped[bool]
-    key_type: Mapped[str] = mapped_column(Text)  # "restricted" | "secret"
-    key_last4: Mapped[str] = mapped_column(String(4))
+    key_type: Mapped[str] = mapped_column(Text)  # "oauth" | "restricted" | "secret"
+    key_last4: Mapped[str | None] = mapped_column(String(4))  # keys only
 
-    # See app/crypto.py: the key encrypted under a per-record data key, which is itself wrapped
+    # See app/crypto.py: the key (or refresh token) encrypted under a per-record data key, which is itself wrapped
     # by the master key. `cipher` names the scheme, so records can be re-encrypted on rotation.
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
     wrapped_dek: Mapped[bytes] = mapped_column(LargeBinary)
@@ -61,6 +63,11 @@ class StripeCredential(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
     last_verified_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    @property
+    def is_app(self) -> bool:
+        """Connected by installing the Stripe App, rather than with a key."""
+        return self.key_type == "oauth"
 
     @property
     def aad(self) -> str:

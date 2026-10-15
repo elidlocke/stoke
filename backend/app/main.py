@@ -11,12 +11,13 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import credentials, customer_id, db, gmail, links, outreach, profile, service, substack, sync
+from app import credentials, customer_id, db, gmail, links, outreach, profile, service, stripe_app, substack, sync
 from app.auth import Unauthenticated
 from app.config import get_settings
 from app.crypto import DecryptionError, get_cipher
 from app.routers import actions, customers, settings, webhooks
 from app.routers import gmail as gmail_routes
+from app.routers import stripe_app as stripe_app_routes
 from app.stripe_client import MissingPermission, NoCredentials
 
 log = logging.getLogger("stoke")
@@ -62,6 +63,7 @@ app.include_router(customers.router)
 app.include_router(actions.router)
 app.include_router(settings.router)
 app.include_router(gmail_routes.router)
+app.include_router(stripe_app_routes.router)
 app.include_router(webhooks.router)
 
 
@@ -83,16 +85,11 @@ async def unauthenticated(_: Request, exc: Unauthenticated) -> JSONResponse:
     return JSONResponse({"detail": "Not signed in"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
 
 
-# FastAPI's default 422 echoes the rejected input, which for /api/credentials would be the key.
+# FastAPI's default 422 echoes the rejected input, which could include a secret.
 @app.exception_handler(RequestValidationError)
 async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
     errors = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]
     return JSONResponse({"detail": errors}, status_code=422)
-
-
-@app.exception_handler(credentials.DuplicateAccount)
-async def duplicate_account(_: Request, exc: credentials.DuplicateAccount) -> JSONResponse:
-    return JSONResponse({"detail": str(exc)}, status_code=409)
 
 
 @app.exception_handler(credentials.CredentialError)
@@ -131,6 +128,16 @@ async def gmail_error(_: Request, exc: gmail.GmailError) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=400)
 
 
+@app.exception_handler(stripe_app.NotConfigured)
+async def stripe_app_not_configured(_: Request, exc: stripe_app.NotConfigured) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=503)
+
+
+@app.exception_handler(stripe_app.StripeAppError)
+async def stripe_app_error(_: Request, exc: stripe_app.StripeAppError) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
 @app.exception_handler(outreach.OutreachNotFound)
 async def outreach_not_found(_: Request, exc: outreach.OutreachNotFound) -> JSONResponse:
     return JSONResponse({"detail": "Not found"}, status_code=404)
@@ -153,7 +160,7 @@ async def link_not_found(_: Request, exc: links.LinkNotFound) -> JSONResponse:
 
 @app.exception_handler(DecryptionError)
 async def decryption_error(_: Request, exc: DecryptionError) -> JSONResponse:
-    log.error("Can't decrypt a stored Stripe key: %s", exc)
+    log.error("Can't decrypt a stored secret: %s", exc)
     return JSONResponse({"detail": "A stored key can't be read. Check the encryption key configuration."}, status_code=500)
 
 

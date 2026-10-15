@@ -29,7 +29,12 @@ services:
         sync: false
       - key: CUSTOMER_ID_SECRET
         sync: false
-      # From backend/scripts/register_webhook.py.
+      # Stoke's Stripe App (docs/stripe-app-setup.md): its install link, the secret key of its own Stripe
+      # account, and the webhook secret backend/scripts/register_webhook.py prints.
+      - key: STRIPE_APP_INSTALL_URL
+        sync: false
+      - key: STRIPE_APP_SECRET_KEY
+        sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       # The service's address. Change both if Render assigns a different name, or when adding a domain.

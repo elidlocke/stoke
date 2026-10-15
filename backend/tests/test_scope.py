@@ -5,11 +5,10 @@ import pytest
 import respx
 from sqlalchemy import update
 
-from app import credentials
 from app.config import get_settings
 from app.db_models import StripeCredential, UserSettings
 from app.stripe_client import NoCredentials, get_scope
-from tests.conftest import mock_stripe_keys, stripe_account as account
+from tests.conftest import add_key, mock_stripe_keys, stripe_account as account
 
 
 @pytest.fixture
@@ -25,8 +24,8 @@ async def test_own_keys(db, make_user, stripe):
     })
     user = await make_user()
     async with db() as session:
-        await credentials.add(session, user, "rk_test_aaaaaaaaaaaa")
-        await credentials.add(session, user, "rk_test_bbbbbbbbbbbb", label="My newsletter")
+        await add_key(session, user, "rk_test_aaaaaaaaaaaa")
+        await add_key(session, user, "rk_test_bbbbbbbbbbbb", label="My newsletter")
 
     scope = await get_scope(user)
 
@@ -44,8 +43,8 @@ async def test_users_only_see_their_own_accounts(db, make_user, stripe):
     })
     alice, bob = await make_user(), await make_user()
     async with db() as session:
-        await credentials.add(session, alice, "rk_test_aaaaaaaaaaaa")
-        await credentials.add(session, bob, "rk_test_bbbbbbbbbbbb")
+        await add_key(session, alice, "rk_test_aaaaaaaaaaaa")
+        await add_key(session, bob, "rk_test_bbbbbbbbbbbb")
 
     assert [a.id for a in (await get_scope(alice)).accounts] == ["acct_a"]
     assert [a.id for a in (await get_scope(bob)).accounts] == ["acct_b"]
@@ -55,7 +54,7 @@ async def test_reporting_currency_preference(db, make_user, stripe):
     mock_stripe_keys(stripe, {"rk_test_aaaaaaaaaaaa": account("acct_a", "A", "eur")})
     user = await make_user()
     async with db() as session:
-        await credentials.add(session, user, "rk_test_aaaaaaaaaaaa")
+        await add_key(session, user, "rk_test_aaaaaaaaaaaa")
         session.add(UserSettings(user_id=user.id, reporting_currency="cad"))
         await session.commit()
 
@@ -66,7 +65,7 @@ async def test_key_without_account_read_permission(db, make_user, stripe):
     mock_stripe_keys(stripe, {"rk_test_aaaaaaaaaaaa": None}, balance_currency={"rk_test_aaaaaaaaaaaa": "cad"})
     user = await make_user()
     async with db() as session:
-        cred = await credentials.add(session, user, "rk_test_aaaaaaaaaaaa")
+        cred = await add_key(session, user, "rk_test_aaaaaaaaaaaa")
     assert cred.missing_permissions == ["Accounts"] and cred.status == "missing_permissions"
 
     [acct] = (await get_scope(user)).accounts
@@ -77,7 +76,7 @@ async def test_rejected_keys_are_left_out(db, make_user, stripe):
     mock_stripe_keys(stripe, {"rk_test_aaaaaaaaaaaa": account("acct_a", "A")})
     user = await make_user()
     async with db() as session:
-        await credentials.add(session, user, "rk_test_aaaaaaaaaaaa")
+        await add_key(session, user, "rk_test_aaaaaaaaaaaa")
         await session.execute(update(StripeCredential).values(status="invalid"))
         await session.commit()
 
@@ -105,8 +104,8 @@ async def test_dev_platform_and_own_keys_combined(db, make_user, stripe, monkeyp
     })
     user = await make_user()
     async with db() as session:
-        await credentials.add(session, user, "rk_test_aaaaaaaaaaaa")
-        await credentials.add(session, user, "rk_test_cccccccccccc")
+        await add_key(session, user, "rk_test_aaaaaaaaaaaa")
+        await add_key(session, user, "rk_test_cccccccccccc")
 
     monkeypatch.setenv("DEV_MODE", "true")
     monkeypatch.setenv("STRIPE_PLATFORM_KEY", "sk_test_platform")

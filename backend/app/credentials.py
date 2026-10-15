@@ -1,13 +1,15 @@
-"""A user's stored Stripe keys: validated against Stripe when added, then kept only encrypted.
+"""A user's connected Stripe accounts: checked against Stripe when connected, with the secret kept only encrypted.
+
+Accounts are connected by installing Stoke's Stripe App (app/stripe_app.py); the stored secret is its refresh
+token. Accounts added earlier with a restricted key keep working until they're switched to the app, which
+converts them in place.
 
 Every lookup is filtered by the owner, so another user's credential id behaves like a missing one.
-The plaintext key exists only in memory: while it's checked here, and in the Stripe client built
-from it (see stripe_client.get_scope). It's never logged and never returned; the API shows its
-last four characters.
+The plaintext secret exists only in memory: while it's checked here, and in the Stripe client built
+from it (see stripe_client.get_scope). It's never logged and never returned.
 """
 
 import asyncio
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,14 +19,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import fetch, sync
+from app import fetch, stripe_app, sync
 from app.auth import CurrentUser
 from app.crypto import get_cipher
 from app.db_models import StripeCredential, credential_aad, credential_account_id
 from app.stripe_client import account_name, clear_scope_cache, make_client
 
-KEY_PATTERN = re.compile(r"^(rk|sk)_(test|live)_[A-Za-z0-9]{10,240}$")
-MAX_KEYS_PER_USER = 50
+MAX_ACCOUNTS_PER_USER = 50
 
 # What the views read, each checked with a one-item list. "Accounts" (for the name) is checked separately.
 PERMISSION_CHECKS = {
@@ -40,14 +41,10 @@ PERMISSION_CHECKS = {
 
 
 class CredentialError(Exception):
-    """The key can't be used; the message is safe to show the user."""
+    """The account can't be connected or read; the message is safe to show the user."""
 
 
 class InvalidKey(CredentialError):
-    pass
-
-
-class DuplicateAccount(CredentialError):
     pass
 
 
@@ -61,20 +58,6 @@ class Probe:
     display_name: str
     settlement_currency: str
     missing_permissions: list[str]
-
-
-def check_format(raw: str) -> tuple[str, bool]:
-    """(key_type, livemode) for a key that's acceptable to store; otherwise CredentialError."""
-    if raw.startswith("pk_"):
-        raise CredentialError("That's a publishable key. Use a restricted key (rk_…) with read access.")
-    m = KEY_PATTERN.match(raw)
-    if not m:
-        raise CredentialError("That doesn't look like a Stripe API key. Restricted keys start with rk_live_ or rk_test_.")
-    prefix, mode = m.groups()
-    if prefix == "sk" and mode == "live":
-        # A live secret key can move money. Stoke only reads, so it never needs one.
-        raise CredentialError("Live secret keys aren't accepted. Create a restricted key with Read access instead.")
-    return ("secret" if prefix == "sk" else "restricted"), mode == "live"
 
 
 def _invalid() -> InvalidKey:
@@ -135,53 +118,51 @@ async def get_for_user(session: AsyncSession, user: CurrentUser, credential_id: 
     return cred
 
 
-async def _check_not_duplicate(
-    session: AsyncSession, user: CurrentUser, account_id: str | None, except_id: uuid.UUID | None = None
-) -> None:
-    if account_id is None:
-        return
-    q = select(StripeCredential.display_name).where(
-        StripeCredential.user_id == user.id, StripeCredential.stripe_account_id == account_id
-    )
-    if except_id is not None:
-        q = q.where(StripeCredential.id != except_id)
-    if (name := await session.scalar(q)) is not None:
-        raise DuplicateAccount(f"You've already added {name}. Use \"Replace key\" on it to change its key.")
-
-
-async def _apply_key(cred: StripeCredential, raw: str, p: Probe, key_type: str, livemode: bool) -> None:
-    sealed = await get_cipher().encrypt(raw, cred.aad)
-    cred.ciphertext, cred.wrapped_dek, cred.cipher = sealed.ciphertext, sealed.wrapped_dek, sealed.cipher
-    cred.key_type, cred.livemode, cred.key_last4 = key_type, livemode, raw[-4:]
-    cred.stripe_account_id = p.stripe_account_id
-    cred.display_name, cred.settlement_currency = p.display_name, p.settlement_currency
-    cred.status, cred.missing_permissions = _status(p), p.missing_permissions
-    cred.last_verified_at = datetime.now(UTC)
-
-
 async def _commit(session: AsyncSession, user: CurrentUser) -> None:
-    try:
-        await session.commit()
-    except IntegrityError:  # the unique (user, account) constraint, if two adds race
-        await session.rollback()
-        raise DuplicateAccount("You've already added this Stripe account.") from None
+    await session.commit()
     clear_scope_cache(user.id)
 
 
-async def add(session: AsyncSession, user: CurrentUser, raw: str, label: str | None = None) -> StripeCredential:
-    raw = raw.strip()
-    key_type, livemode = check_format(raw)
-    count = await session.scalar(select(func.count()).where(StripeCredential.user_id == user.id))
-    if (count or 0) >= MAX_KEYS_PER_USER:
-        raise CredentialError(f"You can add up to {MAX_KEYS_PER_USER} accounts.")
-    p = await probe(raw)
-    await _check_not_duplicate(session, user, p.stripe_account_id)
+async def connect_app(session: AsyncSession, code: str, state: str, browser_nonce: str | None) -> StripeCredential:
+    """Finishes the Stripe App install `stripe_app.authorization_url` started, for the user who started it.
 
-    cred = StripeCredential(id=uuid.uuid4(), user_id=user.id, label=label or None)
-    await _apply_key(cred, raw, p, key_type, livemode)
-    session.add(cred)
-    await _commit(session, user)
-    await start_sync(cred)
+    Connecting an account the user already has (a key-based one, or the app again) updates that record in place,
+    so its name and the links paid through it are kept.
+    """
+    user_id = stripe_app.check_state(state, browser_nonce)
+    tokens = await stripe_app.exchange_code(code)
+    try:
+        p = await probe(tokens.access_token)
+    except InvalidKey:
+        raise stripe_app.StripeAppError("Stripe didn't let Stoke read that account. Try connecting again.") from None
+
+    cred = await session.scalar(select(StripeCredential).where(
+        StripeCredential.user_id == user_id, StripeCredential.stripe_account_id == tokens.account_id
+    ))
+    previous = None
+    if cred is None:
+        count = await session.scalar(select(func.count()).where(StripeCredential.user_id == user_id))
+        if (count or 0) >= MAX_ACCOUNTS_PER_USER:
+            raise stripe_app.StripeAppError(f"You can connect up to {MAX_ACCOUNTS_PER_USER} accounts.", "too_many")
+        cred = StripeCredential(id=uuid.uuid4(), user_id=user_id)
+        session.add(cred)
+    else:
+        previous = (credential_account_id(cred), cred.livemode)
+    await stripe_app.seal(cred, tokens.refresh_token)
+    cred.key_type, cred.key_last4, cred.livemode = "oauth", None, tokens.livemode
+    cred.stripe_account_id = tokens.account_id  # from Stripe's token response: known without "Accounts: Read"
+    cred.display_name, cred.settlement_currency = p.display_name, p.settlement_currency
+    cred.status, cred.missing_permissions = _status(p), p.missing_permissions
+    cred.last_verified_at = datetime.now(UTC)
+    try:
+        await session.commit()
+    except IntegrityError:  # the unique (user, account) constraint, if two connects race
+        await session.rollback()
+        raise stripe_app.StripeAppError("That Stripe account is already connected.") from None
+    clear_scope_cache(user_id)
+    fetch.clear_credential(cred.id)
+    stripe_app.remember(cred.id, tokens.access_token)
+    await start_sync(cred, previous)
     return cred
 
 
@@ -209,37 +190,22 @@ async def reimport(session: AsyncSession, user: CurrentUser, credential_id: uuid
     (e.g. Stripe's webhooks can't reach this server). What's stored is shown meanwhile."""
     cred = await get_for_user(session, user, credential_id)
     if cred.status == "invalid":
-        raise CredentialError("Stripe no longer accepts this key. Replace it, then import again.")
+        raise CredentialError("Stripe no longer lets Stoke read this account. Reconnect it, then import again.")
     await sync.start_backfill(credential_account_id(cred), cred.livemode, cred.missing_permissions, restart=True)
     return cred
 
 
-async def replace_key(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID, raw: str) -> StripeCredential:
-    """Rotate a stored key. The new key must be for the same Stripe account."""
-    cred = await get_for_user(session, user, credential_id)
-    raw = raw.strip()
-    key_type, livemode = check_format(raw)
-    p = await probe(raw)
-    if cred.stripe_account_id and p.stripe_account_id and p.stripe_account_id != cred.stripe_account_id:
-        raise CredentialError(f"This key is for a different Stripe account ({p.display_name}). Add it as a new account instead.")
-    await _check_not_duplicate(session, user, p.stripe_account_id, except_id=cred.id)
-
-    previous = (credential_account_id(cred), cred.livemode)
-    await _apply_key(cred, raw, p, key_type, livemode)
-    await _commit(session, user)
-    fetch.clear_credential(cred.id)
-    await start_sync(cred, previous)
-    return cred
-
-
 async def reverify(session: AsyncSession, user: CurrentUser, credential_id: uuid.UUID) -> StripeCredential:
-    """Check a stored key again, e.g. after granting it more permissions in Stripe."""
+    """Check a stored connection again, e.g. after granting a key more permissions in Stripe."""
     cred = await get_for_user(session, user, credential_id)
-    raw = await get_cipher().decrypt(cred.sealed, credential_aad(user.id, cred.id))
     previous = (credential_account_id(cred), cred.livemode)
     try:
+        if cred.is_app:
+            raw = await stripe_app.access_token(cred)
+        else:
+            raw = await get_cipher().decrypt(cred.sealed, credential_aad(user.id, cred.id))
         p = await probe(raw)
-    except InvalidKey:
+    except (InvalidKey, stripe_app.AppDisconnected):
         cred.status, cred.missing_permissions = "invalid", []
     else:
         cred.status, cred.missing_permissions = _status(p), p.missing_permissions
@@ -265,5 +231,6 @@ async def delete(session: AsyncSession, user: CurrentUser, credential_id: uuid.U
     await session.delete(cred)
     await _commit(session, user)
     fetch.clear_credential(credential_id)
+    stripe_app.forget(credential_id)
     # Stored customer data is kept only while someone has a key to the account.
     await sync.forget_if_orphaned(account_id, livemode)

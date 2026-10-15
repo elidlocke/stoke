@@ -923,20 +923,15 @@ td.link-url {
   max-width: 280px;
   overflow-wrap: anywhere;
 }
-.add-key {
+.connect-stripe {
   margin-top: 16px;
 }
-.add-key h3 {
+.connect-stripe h3 {
   margin: 0 0 8px;
   font-size: 16px;
 }
-.steps {
-  margin: 0 0 16px;
-  padding-left: 20px;
-  font-size: 14px;
-}
-.steps li + li {
-  margin-top: 4px;
+.connect-stripe p {
+  margin: 0 0 12px;
 }
 
 /* ---- First import ---- */

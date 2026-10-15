@@ -238,7 +238,7 @@ Order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. A simple digest of audience 
 - The send and digest jobs: one tick of each loop body, with a mocked Gmail client and a test of the lease (two claimers, one wins).
 
 **Local end to end:**
-1. Start everything with `./dev.sh`. Keep stored data current with `stripe listen --forward-connect-to localhost:8000/api/stripe/webhook`.
+1. Start everything with `./dev.sh`. Keep stored data current with `stripe listen --all-snapshot --forward-connect-to localhost:8000/api/stripe/webhook`.
 2. Run `backend/scripts/seed_test_data.py` with long-tenure, one-off and canceled customers. After the projection change, run `backend/scripts/resync.py`.
 3. Add a revenue stream in Settings and enable Founding upgrade.
 4. Approve the template. A test copy should arrive in your own Gmail (as a test user).

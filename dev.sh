@@ -52,7 +52,7 @@ trap 'kill 0' EXIT
 echo "→ Starting the API on http://127.0.0.1:8000"
 (cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --reload) &
 
-echo "→ Starting the frontend on http://localhost:5173"
+echo "→ Starting the frontend on https://localhost:5173"
 # --strictPort: fail rather than move to another port, which wouldn't match Auth0's and Google's redirect URLs.
 (cd frontend && npm run dev -- --strictPort) &
 

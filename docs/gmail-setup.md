@@ -24,9 +24,9 @@ Part A gets sending working for you today. Part B is the verification submission
 5. **Add test users.** Go to Google Auth Platform → Audience → Test users → Add users. Add the Gmail address you'll connect, and later each beta writer (up to 100). Leave the publishing status on **Testing** for now.
 6. **Create the OAuth client.** Go to Google Auth Platform → Clients → Create client, and choose **Web application**.
    - Authorized JavaScript origins:
-     - `http://localhost:5173`
+     - `https://localhost:5173`
      - `https://stoke-y4sf.onrender.com`
-   - Authorized redirect URIs: `http://localhost:5173/api/gmail/callback` and `https://stoke-y4sf.onrender.com/api/gmail/callback`. Each is `CORS_ORIGIN` followed by `/api/gmail/callback`, and must match exactly.
+   - Authorized redirect URIs: `https://localhost:5173/api/gmail/callback` and `https://stoke-y4sf.onrender.com/api/gmail/callback`. Each is `CORS_ORIGIN` followed by `/api/gmail/callback`, and must match exactly.
    - Copy the client ID and the client secret. Google only shows the secret once, so download the JSON too.
 7. **Configure Stoke.** Add both values to the repo-root `.env`:
    ```

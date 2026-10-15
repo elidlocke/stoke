@@ -40,12 +40,17 @@ class Settings(BaseSettings):
     # Key for the opaque customer ids in URLs (see app/customer_id.py). Required.
     customer_id_secret: SecretStr | None = None
 
-    cors_origin: str = "http://localhost:5173"
+    cors_origin: str = "https://localhost:5173"
     # Host headers the API answers to; anything else is rejected (guards against DNS rebinding).
     allowed_hosts: str = "127.0.0.1,localhost"
     cache_ttl_seconds: int = 300
     # Signing secret of the Connect webhook endpoint (scripts/register_webhook.py). Unset: no endpoint.
     stripe_webhook_secret: SecretStr | None = None
+    # The Stripe App writers install to connect their accounts (app/stripe_app.py, docs/stripe-app-setup.md):
+    # its OAuth install link, from the app's External test tab (later its public link), and the secret key of
+    # the app's own Stripe account, in the same mode as the link. Unset: Stripe accounts can't be connected.
+    stripe_app_install_url: str = ""
+    stripe_app_secret_key: SecretStr | None = None
     # Run imports and re-reads of changed objects in the background (app/sync.py). Off in tests.
     sync_worker: bool = True
     # Google OAuth client (a "Web application" client in Google Cloud) for sending notes from the
@@ -79,6 +84,12 @@ class Settings(BaseSettings):
         Vite dev server proxies /api; in production they share one). Register it on the OAuth client exactly
         as written here."""
         return self.cors_origin.rstrip("/") + "/api/gmail/callback"
+
+    @property
+    def stripe_app_redirect_uri(self) -> str:
+        """Where Stripe sends the writer back after installing the app, like gmail_redirect_uri. Listed in the app
+        manifest's allowed_redirect_uris (stripe-app/stripe-app.json)."""
+        return self.cors_origin.rstrip("/") + "/api/stripe/callback"
 
     @property
     def dev_platform_key(self) -> str | None:

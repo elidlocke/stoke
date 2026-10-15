@@ -9,7 +9,7 @@ from app.auth import current_user
 from app.db_models import User, WriterLink
 from app.links import MAX_LINKS
 from app.main import app
-from tests.conftest import mock_stripe_keys, stripe_account as account
+from tests.conftest import add_key, mock_stripe_keys, stripe_account as account
 
 KEY_A = "rk_test_" + "a" * 24 + "A1b2"
 
@@ -41,8 +41,10 @@ async def api():
 
 
 async def test_add_list_update_delete(db, make_user, stripe, as_user, api):
-    as_user(await make_user())
-    await api.post("/api/credentials", json={"key": KEY_A})
+    user = await make_user()
+    as_user(user)
+    async with db() as session:
+        await add_key(session, user, KEY_A)
 
     resp = await api.post("/api/links", json=CALENDLY)
     assert resp.status_code == 201, resp.text
@@ -79,8 +81,10 @@ async def test_add_list_update_delete(db, make_user, stripe, as_user, api):
     {"category": "newsletter", "kind": "other", "url": "https://example.com"},
 ])
 async def test_invalid_links_are_rejected(db, make_user, stripe, as_user, api, body):
-    as_user(await make_user())
-    await api.post("/api/credentials", json={"key": KEY_A})
+    user = await make_user()
+    as_user(user)
+    async with db() as session:
+        await add_key(session, user, KEY_A)
     assert (await api.post("/api/links", json=body)).status_code == 422
 
 

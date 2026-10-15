@@ -153,7 +153,8 @@ async def account_for(account_id: str, livemode: bool, need: str | None = None) 
 
     account: Account | None = None
     if creds:
-        account = (await own_key_accounts(creds[:1]))[0]
+        # Empty if the credential's Stripe App was just found uninstalled; the next call tries another.
+        account = next(iter(await own_key_accounts(creds[:1])), None)
     elif (platform_key := get_settings().dev_platform_key) and key_livemode(platform_key) == livemode:
         client = make_client(platform_key)
         if platform_key not in _platform_ids:
