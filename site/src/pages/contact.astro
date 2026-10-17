@@ -1,0 +1,31 @@
+---
+import { BUSINESS } from '../business'
+import Fill from '../components/Fill.astro'
+import Support from '../components/Support.astro'
+import Legal from '../layouts/Legal.astro'
+---
+<Legal title="Contact" description="How to reach Stoke’s support." updated="October 16, 2026">
+  <p>
+    Email <Support /> for help with your account, billing,
+    refunds, privacy requests, or to report a security issue. A person reads every message, and we reply within two
+    business days.
+  </p>
+  <h2>Before you write</h2>
+  <ul>
+    <li>
+      <strong>Connecting Stripe:</strong> in Stoke, go to Settings → Your Stripe accounts → Connect with Stripe. If an
+      account shows “Disconnected in Stripe”, choose Reconnect.
+    </li>
+    <li>
+      <strong>Connecting Gmail:</strong> Settings → Gmail → Connect Gmail. To stop Stoke sending, choose Disconnect, or
+      remove Stoke at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+    </li>
+    <li><strong>Cancelling or a refund:</strong> see the <a href="/refunds/">refund and cancellation policy</a>.</li>
+    <li><strong>Deleting your account:</strong> Settings → Delete your account.</li>
+  </ul>
+  <h2>Company</h2>
+  <p>
+    {BUSINESS.product} is run by <Fill value={BUSINESS.legalName} label="legal entity name" />,
+    <Fill value={BUSINESS.address} label="mailing address" />.
+  </p>
+</Legal>

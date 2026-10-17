@@ -7,6 +7,7 @@ import { Cta } from '../components/Cta'
 import { ItemStatus, ListBox, ListItem } from '../components/ListBox'
 import { formatRelative } from '../format'
 import { useOAuthOutcome, type Outcome } from '../useOAuthOutcome'
+import { DeleteAccount } from './SettingsAccount'
 import { GmailSettings } from './SettingsGmail'
 import { AudienceChannels, RevenueStreams } from './SettingsLinks'
 import { Plans } from './SettingsProfile'
@@ -45,6 +46,10 @@ export function Settings() {
       <h2 className="settings-group">Start engaging</h2>
       <div className="settings-grid">
         <GmailSettings />
+      </div>
+      <h2 className="settings-group">Your account</h2>
+      <div className="settings-grid">
+        <DeleteAccount />
       </div>
     </>
   )

@@ -3,12 +3,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useMatch, useNavigate } from 'react-router'
 import { ApiError } from '../api'
+import { SITE_LINKS, signedOutUrl, siteUrl } from '../site'
 import { ImportProgress } from './ImportProgress'
 
 // The brand links to Home.
 const NAV = [
   { to: '/actions', label: 'Actions' },
-  { to: '/analytics/top', label: 'Paid audience' },
+  { to: '/customers', label: 'Customers' },
   { to: '/settings', label: 'Settings' },
 ]
 
@@ -69,13 +70,20 @@ export function Layout() {
           </nav>
           <div className="app-header-user">
             <span className="muted">{user?.email}</span>
-            <button className="link" onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>
+            <button className="link" onClick={() => logout({ logoutParams: { returnTo: signedOutUrl() } })}>
               Log out
             </button>
           </div>
         </div>
       </header>
       <main>{importing && !onSettings ? <ImportProgress onDone={importDone} /> : <Outlet />}</main>
+      <footer className="app-footer">
+        {SITE_LINKS.map((l) => (
+          <a key={l.path} href={siteUrl(l.path)}>
+            {l.label}
+          </a>
+        ))}
+      </footer>
     </>
   )
 }

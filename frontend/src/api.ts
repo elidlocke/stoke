@@ -591,6 +591,7 @@ export const api = {
   atRisk: (account?: string, refresh = false) =>
     get<AtRiskResponse>('/api/at-risk', { account, refresh: refresh ? 'true' : undefined }),
   me: () => get<{ email: string | null }>('/api/me'),
+  deleteMe: () => request<void>('DELETE', '/api/me'),
   // connect_available: whether this server can connect Stripe accounts (its Stripe App is set up)
   credentials: () => get<{ credentials: Credential[]; connect_available: boolean }>('/api/credentials'),
   connectStripe: () => request<{ url: string }>('POST', '/api/stripe/connect'),

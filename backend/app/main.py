@@ -72,11 +72,13 @@ async def healthz() -> dict:
     return {"ok": True}
 
 
-# Every response carries customer data or account details: keep it out of browser and proxy caches.
+# Every response carries customer data or account details: keep it out of browser and proxy caches, and out of
+# search results (the public site, site/, is where search engines should land).
 @app.middleware("http")
 async def no_store(request: Request, call_next):
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
 

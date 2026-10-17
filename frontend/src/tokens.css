@@ -1,0 +1,49 @@
+/* Color tokens, light and dark. Shared by the app (index.css) and the public site (site/src/layouts/Base.astro). */
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --text: #17171c;
+  --muted: #6b6b76;
+  --border: #e4e4e9;
+  --accent: #c2410c;
+  --accent-soft: #ffedd5;
+  --ok: #17803d;
+  --ok-soft: #e3f5e9;
+  --bad: #b42318;
+  --bad-soft: #fdecea;
+  --warn: #9a6200;
+  --warn-soft: #fff6e0;
+  --neutral-soft: #efeff3;
+  /* Chart series, in fixed order; validated for color vision deficiency against --surface. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #4a3aa7;
+  --grid: #ececf0;
+  --axis: #d0d0d8;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111114;
+    --surface: #1a1a1f;
+    --text: #ececf1;
+    --muted: #9a9aa6;
+    --border: #2c2c34;
+    --accent: #fb923c;
+    --accent-soft: #3d2410;
+    --ok: #5fd28a;
+    --ok-soft: #173424;
+    --bad: #ff8a80;
+    --bad-soft: #3d1c1a;
+    --warn: #f0c060;
+    --warn-soft: #3a3018;
+    --neutral-soft: #26262d;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #9085e9;
+    --grid: #26262d;
+    --axis: #3a3a44;
+    color-scheme: dark;
+  }
+}

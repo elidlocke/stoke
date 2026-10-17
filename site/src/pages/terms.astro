@@ -1,0 +1,137 @@
+---
+import { BUSINESS, TRIAL_DAYS } from '../business'
+import Fill from '../components/Fill.astro'
+import Support from '../components/Support.astro'
+import Legal from '../layouts/Legal.astro'
+
+---
+<Legal
+  title="Terms of service"
+  description="The agreement between you and Stoke for using the service."
+  updated="October 16, 2026"
+>
+  <p>
+    These terms are an agreement between you and <Fill value={BUSINESS.legalName} label="legal entity name" /> (“Stoke”,
+    “we”) for using {BUSINESS.product}, its website and its app. By creating an account, you
+    agree to them. If you use Stoke for a business, you agree on its behalf.
+  </p>
+
+  <h2>1. What Stoke is</h2>
+  <p>
+    Stoke shows creators who pays them across the Stripe accounts they connect, suggests people to reach out to, and
+    sends the notes the creator approves from their own Gmail. Stoke reports on your data. It isn’t accounting, tax
+    or financial advice, and its figures can differ from Stripe’s own reports.
+  </p>
+
+  <h2>2. Your account</h2>
+  <ul>
+    <li>You must be at least 18 and able to enter a contract.</li>
+    <li>Keep your sign-in secure. You’re responsible for what happens under your account.</li>
+    <li>Only connect Stripe accounts, Gmail accounts and Substack exports that you own or are allowed to use.</li>
+  </ul>
+
+  <h2>3. Plans and payment</h2>
+  <ul>
+    <li>Plans are priced by your number of paying customers a month, as shown on the <a href="/pricing/">pricing page</a>. Paid plans start with a {TRIAL_DAYS}-day free trial; if you don’t cancel before it ends, they’re billed monthly or yearly in advance, in US dollars, and renew automatically until you cancel.</li>
+    <li>Prices don’t include taxes. We add sales tax or VAT where the law requires it.</li>
+    <li>We’ll give you at least 30 days’ notice by email before a price change affects you.</li>
+    <li>If a payment fails, we’ll retry it and email you. If it still fails, we may pause paid features.</li>
+    <li>Cancelling and refunds follow our <a href="/refunds/">refund and cancellation policy</a>.</li>
+  </ul>
+
+  <h2>4. Your data and your readers</h2>
+  <ul>
+    <li>
+      You own your data, including your readers’ and customers’ details. You let us process it only to run Stoke for
+      you, as described in our <a href="/privacy/">privacy policy</a>.
+    </li>
+    <li>
+      For your readers’ details, you decide whom to contact and why. You’re responsible for having the right to
+      contact them, under the laws that apply to you and them.
+    </li>
+    <li>You can delete your account and data at any time from Settings.</li>
+  </ul>
+
+  <h2 id="acceptable-use">5. Acceptable use and sending rules</h2>
+  <p>Stoke is for personal notes to people who already have a relationship with you. When you send through Stoke:</p>
+  <ul>
+    <li>Only write to people who have paid you or subscribed to you.</li>
+    <li>Identify yourself, and don’t use misleading subject lines or sender details.</li>
+    <li>
+      If someone asks you not to email them again, stop. Follow anti-spam laws that apply to you, such as CAN-SPAM in
+      the US, CASL in Canada, and the GDPR and ePrivacy rules in the EU and UK.
+    </li>
+    <li>Stay within Gmail’s sending limits and Google’s policies.</li>
+  </ul>
+  <p>And never use Stoke to:</p>
+  <ul>
+    <li>send bulk, unsolicited or purchased-list email, or harass anyone;</li>
+    <li>break the law, or the terms of Stripe, Google or Substack;</li>
+    <li>try to reach another user’s data, probe or overload Stoke, or get around its limits;</li>
+    <li>resell Stoke or its data without our written permission.</li>
+  </ul>
+  <p>We may suspend sending, or your account, if we believe these rules are being broken. Where we can, we’ll tell you first.</p>
+
+  <h2>6. Other services</h2>
+  <p>
+    Stoke connects to Stripe, Google (Gmail) and Substack, and uses Auth0 for sign-in. Their own terms apply to your
+    use of them, and we aren’t responsible for their availability or changes. Stoke isn’t affiliated with or endorsed
+    by Substack, Stripe or Google.
+  </p>
+
+  <h2>7. Changes to Stoke</h2>
+  <p>
+    We keep improving Stoke, and may add, change or remove features. If we remove something significant from a paid
+    plan, we’ll tell you in advance, and you can cancel with a prorated refund.
+  </p>
+
+  <h2>8. Ending the agreement</h2>
+  <ul>
+    <li>You can stop using Stoke and delete your account at any time.</li>
+    <li>
+      We can end these terms with 30 days’ notice, or straight away if you seriously break them. If we end them without
+      cause, we’ll refund any prepaid, unused period.
+    </li>
+    <li>When your account ends, we delete your data as described in the <a href="/privacy/#retention">privacy policy</a>.</li>
+  </ul>
+
+  <h2>9. Disclaimers</h2>
+  <p>
+    Stoke is provided “as is” and “as available”. We work hard to keep it accurate and running, but we don’t promise
+    that it will be uninterrupted or error-free, or that its figures will match other reports. To the extent the law
+    allows, we disclaim all implied warranties, including merchantability, fitness for a particular purpose and
+    non-infringement.
+  </p>
+
+  <h2>10. Limitation of liability</h2>
+  <p>
+    To the extent the law allows, neither party is liable for indirect, incidental, special, consequential or punitive
+    damages, or for lost profits or revenue. Our total liability for any claim is limited to the greater of what you
+    paid Stoke in the 12 months before the claim, or US$100. None of this limits liability that can’t be limited by
+    law.
+  </p>
+
+  <h2>11. Indemnity</h2>
+  <p>
+    If someone brings a claim against us because of the content you send through Stoke, or your breach of section 5,
+    you’ll cover our reasonable costs of dealing with it.
+  </p>
+
+  <h2>12. Governing law</h2>
+  <p>
+    These terms are governed by the laws of <Fill value={BUSINESS.governingLaw} label="governing law and venue" />,
+    and disputes will be heard in its courts, unless the law where you live gives you the right to bring them there.
+  </p>
+
+  <h2>13. Changes to these terms</h2>
+  <p>
+    We’ll update the date at the top when we change these terms, and email you at least 30 days before a material
+    change takes effect. Continuing to use Stoke after that means you accept the new terms.
+  </p>
+
+  <h2>14. Contact</h2>
+  <p>
+    <Support /> · <Fill value={BUSINESS.legalName} label="legal entity name" />,
+    <Fill value={BUSINESS.address} label="mailing address" />
+  </p>
+</Legal>

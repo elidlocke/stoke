@@ -99,8 +99,8 @@ function Wins() {
           <h1>{headline ?? 'Your paid audience at a glance'}</h1>
           <p className="muted wins-scope">Paying readers only, from Stripe. Free subscribers aren’t counted here.</p>
         </div>
-        <Link to="/analytics/top" className="card-more">
-          See your paid audience →
+        <Link to="/customers" className="card-more">
+          See your customers →
         </Link>
       </header>
       <TrendCharts />

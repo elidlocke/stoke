@@ -1,0 +1,14 @@
+---
+// The support address as a mailto link, or a TODO placeholder while it's empty (src/business.ts). A subject
+// pre-fills the email, and a label replaces the address as the link text.
+import { BUSINESS } from '../business'
+import Todo from './Todo.astro'
+
+interface Props {
+  subject?: string
+  label?: string
+}
+const { subject, label } = Astro.props
+const href = `mailto:${BUSINESS.supportEmail}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`
+---
+{BUSINESS.supportEmail ? <a href={href}>{label ?? BUSINESS.supportEmail}</a> : <Todo>support email</Todo>}

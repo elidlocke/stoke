@@ -1,0 +1,38 @@
+---
+import { TRIAL_DAYS } from '../business'
+import Support from '../components/Support.astro'
+import Legal from '../layouts/Legal.astro'
+---
+<Legal
+  title="Refund and cancellation policy"
+  description="How to cancel a Stoke plan, and when you can get a refund."
+  updated="October 16, 2026"
+>
+  <h2>Cancelling</h2>
+  <ul>
+    <li>Paid plans start with a {TRIAL_DAYS}-day free trial. Cancel before it ends and you’re never charged.</li>
+    <li>You can cancel your plan at any time in Stoke, or by emailing <Support />.</li>
+    <li>Your plan stays active until the end of the billing period you’ve already paid for. It isn’t renewed, and you aren’t charged again.</li>
+    <li>There are no cancellation fees.</li>
+  </ul>
+  <h2>Refunds</h2>
+  <ul>
+    <li>
+      Every paid plan starts with a {TRIAL_DAYS}-day free trial, so you can try everything before you pay. Because of
+      that, payments aren’t refunded, including for partial periods. Cancelling stops all future charges.
+    </li>
+    <li>If we charge you in error, or Stoke is unavailable for a long stretch through our fault, we’ll refund the affected period.</li>
+    <li>Refunds go back to the card you paid with, and usually show up within 5–10 business days, depending on your bank.</li>
+  </ul>
+  <h2>Changing plans</h2>
+  <p>
+    Upgrades take effect straight away, and you pay the difference for the rest of the period. Downgrades take effect
+    at the next renewal.
+  </p>
+  <h2>Deleting your account</h2>
+  <p>
+    Deleting your account in Settings also cancels your plan. It doesn’t refund the current period.
+  </p>
+  <h2>Questions</h2>
+  <p>Email <Support />.</p>
+</Legal>

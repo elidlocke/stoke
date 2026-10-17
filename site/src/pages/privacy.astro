@@ -1,0 +1,226 @@
+---
+import { BUSINESS } from '../business'
+import Fill from '../components/Fill.astro'
+import Support from '../components/Support.astro'
+import Legal from '../layouts/Legal.astro'
+
+---
+<Legal
+  title="Privacy policy"
+  description="What Stoke collects from you, your Stripe accounts, Gmail and Substack, how it’s used and protected, and how to delete it."
+  updated="October 16, 2026"
+>
+  <div class="summary">
+    <p><strong>The short version</strong></p>
+    <ul>
+      <li>Stoke reads your Stripe accounts (read-only) to show you who pays you.</li>
+      <li>It sends email from your Gmail only when you approve a note. It can’t read your email.</li>
+      <li>Your readers’ email addresses and names are stored encrypted. We keep only the fields Stoke needs.</li>
+      <li>We don’t sell data, show ads, or use your data or your readers’ data to train AI models.</li>
+      <li>You can delete everything from Settings, at any time.</li>
+    </ul>
+  </div>
+
+  <h2 id="who">Who we are</h2>
+  <p>
+    {BUSINESS.product} (“Stoke”, “we”) is an analytics and outreach service for Substack writers, run by
+    <Fill value={BUSINESS.legalName} label="legal entity name" />, <Fill value={BUSINESS.address} label="mailing address" />.
+    For anything in this policy, email <Support />.
+  </p>
+  <p>
+    This policy covers you, the writer who uses Stoke. It also explains what happens to the details of your readers and
+    customers that Stoke handles for you. For those details, you decide whom to contact and why, and Stoke processes
+    them on your behalf.
+  </p>
+
+  <h2 id="collect">What we collect</h2>
+
+  <h3>Your account</h3>
+  <ul>
+    <li>
+      Your email address and a user id from Auth0, the service that handles sign-in. Auth0 holds your password or social
+      sign-in; Stoke never sees it.
+    </li>
+    <li>When your account was created and last used.</li>
+    <li>Your settings: reporting currency, Substack handle, plan names you set, and the links you add (revenue streams and social channels).</li>
+  </ul>
+
+  <h3>From the Stripe accounts you connect</h3>
+  <p>
+    When you install Stoke’s Stripe app, you approve read-only access on Stripe. Stoke then imports, and keeps current,
+    a copy of these objects, limited to an allowlist of fields:
+  </p>
+  <ul>
+    <li>payments, charges, refunds and the fees on each payment;</li>
+    <li>invoices and subscriptions: plan, price, status, dates, discounts, and Stripe’s cancellation reason;</li>
+    <li>customers: <strong>email address and name</strong>, stored encrypted;</li>
+    <li>disputes: amount, status and deadline;</li>
+    <li>the account’s name and payout currency.</li>
+  </ul>
+  <p>
+    Stoke never stores customers’ postal addresses, phone numbers, card details (beyond the card brand, type and
+    issuing country), metadata, free-text cancellation comments, or dispute evidence. Stripe never shares full card
+    numbers with apps.
+  </p>
+
+  <h3 id="google">From Google, when you connect Gmail</h3>
+  <ul>
+    <li>Your Gmail address, so Stoke can show which account it sends from and send test notes to you.</li>
+    <li>A refresh token that lets Stoke send email as you, stored encrypted.</li>
+    <li>For each note sent, the message and thread id Gmail returns, so Stoke can show it as sent.</li>
+  </ul>
+  <p>
+    Stoke asks only for permission to send email (<code>gmail.send</code>), and to know your address. It can’t read,
+    search, list, label or delete your messages, and it keeps no copy of your mailbox.
+  </p>
+
+  <h3>From Substack, when you upload an export</h3>
+  <ul>
+    <li>
+      From the subscriber export you upload: each <strong>free</strong> subscriber’s email address and first name (stored
+      encrypted), start date, and engagement counts (opens, days active, post views, clicks, comments, shares). Paid
+      subscribers in the file are ignored, and the file itself isn’t stored.
+    </li>
+    <li>Your public Substack profile and publications, read from the handle you enter.</li>
+  </ul>
+
+  <h3>What you write</h3>
+  <p>Your note templates, and each note sent to a reader (subject and text), stored encrypted.</p>
+
+  <h3>Technical data</h3>
+  <ul>
+    <li>
+      Our hosting provider keeps standard server logs (IP address, time, and the page or API address requested) for
+      security and troubleshooting. Customer pages use opaque ids, so readers’ emails don’t appear in these logs.
+    </li>
+    <li>
+      The app keeps your sign-in session in your browser’s local storage, and uses a short-lived cookie while you connect
+      Stripe or Gmail, to make sure the connection is yours.
+    </li>
+    <li>We don’t use analytics, tracking pixels or advertising cookies, on this site or in the app.</li>
+  </ul>
+
+  <h2 id="use">How we use it</h2>
+  <ul>
+    <li>To show you your customers, payments, at-risk subscribers and suggested actions.</li>
+    <li>To send the notes you approve, to the readers you choose, from your Gmail, and test notes to yourself.</li>
+    <li>To keep Stoke secure, fix problems, and answer your support requests.</li>
+    <li>To bill you for your plan, and to meet legal obligations.</li>
+  </ul>
+  <p>
+    We don’t sell or rent personal data, use it for advertising, or use it, or let others use it, to train AI or
+    machine-learning models.
+  </p>
+
+  <h2 id="limited-use">Google user data</h2>
+  <blockquote>
+    Stoke's use and transfer of information received from Google APIs to any other app will adhere to
+    <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+    including the Limited Use requirements.
+  </blockquote>
+  <p>In particular:</p>
+  <ul>
+    <li>Stoke uses Google user data only to send the notes you approve and to show which Gmail account is connected.</li>
+    <li>
+      It doesn’t transfer that data to anyone, except as needed to provide this feature, to comply with the law, or as
+      part of a merger or sale of Stoke, with notice to you.
+    </li>
+    <li>It doesn’t use that data for advertising, and doesn’t sell it.</li>
+    <li>
+      No person at Stoke reads it, unless you ask us to (for example, for support), it’s needed for security, or the law
+      requires it.
+    </li>
+  </ul>
+  <p>
+    To stop Stoke’s access, choose <strong>Disconnect</strong> in Settings → Gmail. That revokes the token at Google
+    and deletes it from Stoke. You can also remove Stoke at
+    <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+  </p>
+
+  <h2 id="sharing">Who we share it with</h2>
+  <p>Only the service providers that run Stoke for us, under contracts that limit their use of it:</p>
+  <table>
+    <thead>
+      <tr><th scope="col">Provider</th><th scope="col">What for</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Render</td><td>Hosting and the database, in the United States</td></tr>
+      <tr><td>Auth0 (Okta)</td><td>Sign-in</td></tr>
+      <tr><td>Google</td><td>Sending your notes through the Gmail API</td></tr>
+      <tr><td>Stripe</td><td>The source of your payment data; billing for your Stoke plan</td></tr>
+      <tr><td>Amazon Web Services</td><td>Encryption key management, when enabled</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Stoke also looks up currency exchange rates from the European Central Bank, via Frankfurter. Those requests contain
+    only currencies and dates, never personal data.
+  </p>
+  <p>We may disclose data if the law requires it, or to protect our users or Stoke from harm.</p>
+
+  <h2 id="retention">How long we keep it</h2>
+  <ul>
+    <li>Your account and settings: until you delete your account.</li>
+    <li>
+      A Stripe account’s imported data: while it’s connected. Removing it in Settings deletes the data, unless another
+      Stoke user still has the same account connected.
+    </li>
+    <li>Free subscribers: until you upload a newer export (which replaces them) or remove the list.</li>
+    <li>Gmail access: until you disconnect it.</li>
+    <li>Notes you’ve sent: until you delete your account.</li>
+    <li>
+      Deleted data can remain in our hosting provider’s encrypted database backups for up to 30 days, until they’re
+      overwritten.
+    </li>
+  </ul>
+
+  <h2 id="delete">Deleting your data</h2>
+  <p>
+    <strong>Settings → Delete your account</strong> deletes everything listed above straight away: your Stripe
+    connections and their imported data, free-subscriber lists, notes and settings. It also revokes Gmail access.
+    Your sign-in identity at Auth0 is kept, so you can sign up again; email <Support />
+    and we’ll delete it too. To stop Stripe’s access completely, also uninstall Stoke from your Stripe Dashboard.
+  </p>
+
+  <h2 id="readers">If you’re a reader</h2>
+  <p>
+    If a writer you pay or subscribe to uses Stoke, Stoke holds your email address and name, your payment history with
+    that writer, and (if you’re a free Substack subscriber) your engagement counts, on the writer’s behalf. Ask the
+    writer to remove you, or email <Support /> and we’ll help. Every note sent through
+    Stoke comes from the writer’s own email address, so you can reply to them directly.
+  </p>
+
+  <h2 id="rights">Your rights</h2>
+  <p>
+    Depending on where you live (for example, under the GDPR in the EU and UK, the CCPA in California, or PIPEDA in
+    Canada), you can ask to access, correct, export or delete your personal data, or object to how we use it. Email
+    <Support /> and we’ll respond within 30 days. You can also complain to your local
+    data protection authority. We don’t sell or “share” personal data as the CCPA defines it.
+  </p>
+
+  <h2 id="security">Security</h2>
+  <p>
+    Access tokens, readers’ emails and names, and your notes are encrypted at rest, and everything travels over HTTPS.
+    See the <a href="/security/">security page</a> for details.
+  </p>
+
+  <h2 id="transfers">Where data is kept</h2>
+  <p>
+    Stoke’s servers and database are in the United States. If you use Stoke from elsewhere, your data is transferred
+    there, with safeguards such as the European Commission’s Standard Contractual Clauses where required.
+  </p>
+
+  <h2 id="children">Children</h2>
+  <p>Stoke is for people running a business, and isn’t meant for anyone under 16.</p>
+
+  <h2 id="changes">Changes</h2>
+  <p>
+    If we change this policy, we’ll update the date at the top. If a change affects how we use data you’ve already
+    given us, we’ll email you before it takes effect.
+  </p>
+
+  <h2 id="contact">Contact</h2>
+  <p>
+    <Support /> · <Fill value={BUSINESS.legalName} label="legal entity name" />,
+    <Fill value={BUSINESS.address} label="mailing address" />
+  </p>
+</Legal>

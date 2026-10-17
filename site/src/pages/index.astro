@@ -1,0 +1,259 @@
+---
+import { count, FREE_LIMIT, signupUrl, TRIAL_DAYS } from '../business'
+import Base from '../layouts/Base.astro'
+
+// Who Stoke is for, typed out in turn in the hero. The first shows without JavaScript.
+const audiences = ['Substack writers', 'creators', 'coaches', 'authors', 'podcasters', 'course creators']
+
+// The fee example, worked out from the published rates so every figure on the page agrees: a month of $10
+// subscriptions. Substack 10%; Stripe 2.9% + 30¢ per charge, plus 0.7% Billing on subscriptions.
+const PRICE = 10
+const GROSS = 1000
+const perSub = PRICE - PRICE * 0.1 - (PRICE * 0.029 + 0.3) - PRICE * 0.007
+const takeHome = Math.round((GROSS / PRICE) * perSub)
+const usd = (n: number) => `$${n.toLocaleString('en-US')}`
+
+const pains = [
+  {
+    quote: `My dashboard says ${usd(GROSS)} a month. My bank says otherwise.`,
+    answer: `Substack shows gross. After its 10% and Stripe’s fees, ${usd(GROSS)} from $10 subscribers is about ${usd(takeHome)}. Stoke shows you the real number.`,
+  },
+  {
+    quote: 'My subscribers are on Substack, but most of my income is from courses and digital downloads. I couldn’t tell you who’s bought both.',
+    answer: 'If it’s paid through your Stripe, Stoke sees it, and puts each person back together.',
+  },
+  {
+    quote: 'I know some of my readers would book a call. I just don’t know which ones.',
+    answer: 'Your most loyal readers are your best clients in waiting. Stoke finds them.',
+  },
+  {
+    quote: 'I’d rather write than sell.',
+    answer: 'Good. Stoke helps you send a few personal notes, never a campaign.',
+  },
+]
+
+// Drawn top to bottom, revealed bottom to top: the foundation first, Stoke last.
+const stack = [
+  {
+    name: 'Stoke',
+    body: 'Reads that Stripe data and makes sense of it: what you really take home, who each person is across everything they’ve bought, and who’s ready for the next step.',
+    top: true,
+  },
+  {
+    name: 'Stripe',
+    body: 'Moves the money, from Substack and from whatever else you sell through it, like paid downloads, courses and tips, and holds every paying customer’s details.',
+  },
+  { name: 'Substack', body: 'Publishes your writing and runs your paywall.' },
+]
+
+const outcomes = [
+  {
+    title: 'We’ll show you your real number.',
+    body: 'Take-home after Substack’s cut, Stripe’s fees, refunds and disputes, for every payment and every month, across all your accounts.',
+    example: `${usd(GROSS)} gross → ${usd(takeHome)} take-home`,
+  },
+  {
+    title: 'We’ll put each person together.',
+    body: 'Subscriptions, coaching, tips and one-off purchases, matched by email across every Stripe account you connect. One page per person, with everything they’ve paid you.',
+    example: '2 years subscribed · 1 course · 2 tips',
+  },
+  {
+    title: 'We’ll point out who’s ready.',
+    body: 'Cards failing before they turn into cancellations, free readers who open everything, loyal subscribers who haven’t seen your other offers yet, anniversaries worth a thank-you.',
+    example: '38 free readers ready to hear about paid',
+  },
+  {
+    title: 'You send the note, in your words.',
+    body: 'No blasts. A short personal note, sent one at a time from your own Gmail, reads like a message from you, not marketing. Replies come straight back to you.',
+    example: 'Sent from your Gmail · in your Sent folder',
+  },
+]
+
+// The example shortlist, with the app's action types and tones.
+const shortlist = [
+  { tone: 'bad', label: 'Retention · urgent', who: '4 cards failing', why: '$112 at risk if they lapse' },
+  { tone: 'accent', label: 'Upgrade', who: '38 free readers open everything', why: 'Ready to hear about paid' },
+  { tone: 'accent', label: 'Cross-sell', who: '11 subscribers, 2+ years, no course yet', why: 'A fit for your new course' },
+  { tone: 'ok', label: 'Gratitude', who: '6 anniversaries this week', why: 'A thank-you, nothing to sell' },
+]
+---
+<Base
+  title="Stoke"
+  description="Stoke reads your Stripe account to show Substack writers what they really take home, who each paying reader is, and who’s ready for the next step."
+>
+  <section class="hero">
+    <div class="wrap">
+      <h1 data-reveal>Your audience is ready for more. Let’s find them.</h1>
+      <p class="for" data-reveal data-delay="1">
+        Made for <span class="sr-only">{audiences.join(', ')}</span><span
+          class="typed"
+          aria-hidden="true"
+          data-typed
+          data-words={audiences.join('|')}>{audiences[0]}</span>
+      </p>
+      <p class="lede" data-reveal data-delay="2">
+        You make the work people pay for. Stoke reads your Stripe account, shows what you really earn and from whom,
+        tells you who’s ready for the next step, and helps you reach them with a personal note from your own Gmail.
+      </p>
+      <div class="ctas" data-reveal data-delay="3">
+        <a class="button primary" href={signupUrl()}>Get started</a>
+        <a class="button" href="/pricing/">See pricing</a>
+      </div>
+      <p class="free-note" data-reveal data-delay="3">
+        Free until you pass {count(FREE_LIMIT)} paying customers a month. Bigger audiences get {TRIAL_DAYS} days free.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2 data-reveal>You’ve done the hard part.</h2>
+      <p class="section-lede" data-reveal>
+        You built something people pay for. The business side just hasn’t been pulling its weight.
+      </p>
+      <div class="pains">
+        {pains.map((p, i) => (
+          <figure class="pain" data-reveal data-delay={i % 2}>
+            <blockquote>“{p.quote}”</blockquote>
+            <figcaption>{p.answer}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap center">
+      <h2 data-reveal>Stoke sits on top of what you already use.</h2>
+      <p class="section-lede" data-reveal>Your publication, your payments, and finally, a clear view of both.</p>
+      <div class="stack">
+        {stack.map((layer, i) => (
+          <div class:list={['layer', { top: layer.top }]} data-reveal data-delay={stack.length - 1 - i}>
+            <h3>{layer.name}</h3>
+            <p>{layer.body}</p>
+          </div>
+        ))}
+      </div>
+      <p class="stack-note" data-reveal>Nothing to migrate. Your readers never see Stoke; they just hear from you.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2 data-reveal>From your Stripe data to who to Stoke.</h2>
+      <p class="section-lede" data-reveal>
+        To <em>stoke</em> a reader is to give them the nudge that moves them a step: from free to paid, from subscriber
+        to client, from lapsed to back.
+      </p>
+      <div class="outcomes-layout">
+        <div class="outcomes">
+          {outcomes.map((o) => (
+            <div class="outcome" data-reveal>
+              <h3>{o.title}</h3>
+              <p>{o.body}</p>
+              <span class="outcome-example">{o.example}</span>
+            </div>
+          ))}
+        </div>
+        <aside class="mock-wrap" data-reveal data-delay="1" aria-label="Example: who to Stoke this week">
+          <div class="mock-panel">
+            <div class="mock-head">
+              <span>Who to Stoke this week</span>
+              <span class="mock-label">Example</span>
+            </div>
+            <ul>
+              {shortlist.map((s) => (
+                <li>
+                  <span class:list={['chip', s.tone]}>{s.label}</span>
+                  <strong>{s.who}</strong>
+                  <span class="muted">{s.why}</span>
+                  <span class="mock-action" aria-hidden="true">Stoke →</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2 data-reveal>How it works</h2>
+      <p class="section-lede" data-reveal>A few minutes to set up. Then Stoke keeps watch.</p>
+      <ol class="steps">
+        <li data-reveal>
+          <h3>Connect Stripe</h3>
+          <p>
+            Install Stoke’s read-only Stripe app on each account you sell through. You see exactly what it can read
+            before you approve, and you can uninstall it from Stripe at any time.
+          </p>
+        </li>
+        <li data-reveal data-delay="1">
+          <h3>Add your free subscribers</h3>
+          <p>
+            Upload the subscriber export from your Substack dashboard. Stoke keeps only free subscribers’ email, first
+            name, start date and engagement counts, encrypted.
+          </p>
+        </li>
+        <li data-reveal data-delay="2">
+          <h3>Connect Gmail to send notes</h3>
+          <p>
+            Stoke asks Google for permission to send email only. It sends the notes you approve, to the readers you
+            choose, from your own address.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section" id="access">
+    <div class="wrap">
+      <h2 data-reveal>What Stoke can and can’t access</h2>
+      <p class="section-lede" data-reveal>
+        Your readers trust you. We treat that trust as ours, and ask for the narrowest access that works. The details
+        are in our <a href="/privacy/">privacy policy</a> and on the <a href="/security/">security page</a>.
+      </p>
+      <div class="table-scroll" data-reveal>
+        <table class="access">
+          <thead>
+            <tr>
+              <th scope="col">Service</th>
+              <th scope="col">Stoke can</th>
+              <th scope="col">Stoke can’t</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Stripe</th>
+              <td class="yes">Read payments, customers, subscriptions, invoices, refunds and disputes</td>
+              <td class="no">Move money, issue refunds, or change anything in your account</td>
+            </tr>
+            <tr>
+              <th scope="row">Gmail</th>
+              <td class="yes">Send the notes you approve, from your address, and see which address that is</td>
+              <td class="no">Read, search, label or delete your email</td>
+            </tr>
+            <tr>
+              <th scope="row">Substack</th>
+              <td class="yes">Use the subscriber export you upload, and your public profile</td>
+              <td class="no">Sign in to Substack or see anything you don’t upload</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="closing" data-reveal>
+        <div class="ember" aria-hidden="true"><img src="/favicon.svg" alt="" width="44" height="44" /></div>
+        <h2>Your next paying reader is already on your list.</h2>
+        <p>Connect Stripe and find out who to Stoke first. Free until you pass {count(FREE_LIMIT)} paying customers a month.</p>
+        <a class="button primary" href={signupUrl()}>Get started</a>
+        <p class="closing-alt"><a href="/pricing/">See pricing</a></p>
+      </div>
+    </div>
+  </section>
+</Base>

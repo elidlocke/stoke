@@ -200,5 +200,11 @@ async def delete(session: AsyncSession, user: CurrentUser, publication: str) -> 
     _data_keys.pop((user.id, publication), None)
 
 
+def forget_user(user_id: uuid.UUID) -> None:
+    """Drops a deleted user's cached data keys."""
+    for key in [k for k in _data_keys if k[0] == user_id]:
+        del _data_keys[key]
+
+
 def clear_cache() -> None:
     _data_keys.clear()

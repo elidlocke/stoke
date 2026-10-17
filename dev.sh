@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Starts Stoke locally: Postgres, migrations, the API and the frontend. Ctrl+C stops the API and
-# frontend; Postgres keeps running (stop it with `docker compose stop`).
+# Starts Stoke locally: Postgres, migrations, the API, the frontend and the public site. Ctrl+C stops the
+# API, frontend and site; Postgres keeps running (stop it with `docker compose stop`).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -39,6 +39,7 @@ free_port() {
 
 free_port 8000 API
 free_port 5173 frontend
+free_port 4321 site
 
 echo "→ Starting Postgres"
 docker compose up -d --wait db
@@ -50,6 +51,10 @@ if [ ! -d frontend/node_modules ] || [ frontend/package-lock.json -nt frontend/n
   echo "→ Installing frontend dependencies"
   (cd frontend && npm install)
 fi
+if [ ! -d site/node_modules ] || [ site/package-lock.json -nt site/node_modules ]; then
+  echo "→ Installing public site dependencies"
+  (cd site && npm install)
+fi
 
 # Stop both servers on Ctrl+C.
 trap 'kill 0' EXIT
@@ -60,5 +65,8 @@ echo "→ Starting the API on http://127.0.0.1:8000"
 echo "→ Starting the frontend on https://localhost:5173"
 # --strictPort: fail rather than move to another port, which wouldn't match Auth0's and Google's redirect URLs.
 (cd frontend && npm run dev -- --strictPort) &
+
+echo "→ Starting the public site on http://localhost:4321"
+(cd site && npm run dev -- --port 4321) &
 
 wait

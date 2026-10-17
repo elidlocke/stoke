@@ -12,6 +12,8 @@ COPY frontend/ ./
 ARG VITE_AUTH0_DOMAIN
 ARG VITE_AUTH0_CLIENT_ID
 ARG VITE_AUTH0_AUDIENCE
+# The public site (optional): legal links and where signing out lands.
+ARG VITE_SITE_URL
 RUN test -n "$VITE_AUTH0_DOMAIN" -a -n "$VITE_AUTH0_CLIENT_ID" -a -n "$VITE_AUTH0_AUDIENCE" \
     || (echo "Set VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID and VITE_AUTH0_AUDIENCE" && exit 1)
 RUN npm run build

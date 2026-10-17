@@ -55,8 +55,8 @@ Google reviews the consent screen, your domain, a homepage, a privacy policy and
    - Point it at the Render service.
    - Update `ALLOWED_HOSTS` and `CORS_ORIGIN` in `render.yaml`.
    - Add `https://<domain>` and `https://<domain>/api/gmail/callback` to the OAuth client.
-2. **Publish a public homepage on that domain.** Google needs a page anyone can read without signing in. It should say what Stoke is, why it asks for Gmail access, and link to the privacy policy. Stoke's root URL currently shows only the sign-in screen, which isn't enough.
-3. **Publish a privacy policy on the same domain**, linked from the homepage. It must cover:
+2. **Publish a public homepage on that domain.** Google needs a page anyone can read without signing in. It should say what Stoke is, why it asks for Gmail access, and link to the privacy policy. The public site in `site/` is this page (`site/src/pages/index.astro`); point the domain at the `stoke-site` static service.
+3. **Publish a privacy policy on the same domain**, linked from the homepage. `site/src/pages/privacy.astro` covers each point below; keep it that way when the code changes. It must cover:
    - **What Google data Stoke gets:** the Gmail address, and permission to send email as the writer. Stoke can't read, search or delete their email.
    - **How it's used:** only to send notes the writer has approved, to the readers they chose, and test notes to themselves.
    - **How it's stored:** the refresh token is encrypted at rest. Note text is encrypted. Stoke keeps no copy of the writer's mailbox.

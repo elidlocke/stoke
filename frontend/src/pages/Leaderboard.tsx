@@ -20,7 +20,7 @@ export function Leaderboard() {
   return (
     <>
       <header className="page-header">
-        <h1>Paid audience</h1>
+        <h1>Customers</h1>
         {board.data && (
           <span className="muted">
             Your paying readers, ranked by take-home in {board.data.reporting_currency.toUpperCase()} after refunds and fees

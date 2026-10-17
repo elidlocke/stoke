@@ -27,6 +27,7 @@ services:
         VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-}
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}
+        VITE_SITE_URL: ${VITE_SITE_URL:-}
     env_file: .env
     environment:
       DATABASE_URL: postgresql://stoke:stoke@db:5432/stoke

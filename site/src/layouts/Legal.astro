@@ -1,0 +1,18 @@
+---
+// A policy page: a narrow column of prose, with its effective date.
+import Base from './Base.astro'
+
+interface Props {
+  title: string
+  description: string
+  updated: string
+}
+const { title, description, updated } = Astro.props
+---
+<Base title={title} description={description}>
+  <article class="wrap prose">
+    <h1>{title}</h1>
+    <p class="muted">Last updated {updated}</p>
+    <slot />
+  </article>
+</Base>

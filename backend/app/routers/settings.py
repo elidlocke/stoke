@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import credentials, links, profile, service, stripe_app, substack, substack_list, sync
+from app import account, credentials, links, profile, service, stripe_app, substack, substack_list, sync
 from app.auth import CurrentUser, UserDep
 from app.db import get_session
 from app.db_models import StripeCredential, UserSettings, WriterLink, credential_account_id
@@ -68,6 +68,12 @@ def _to_out(c: StripeCredential, sync_state: str) -> CredentialOut:
 @router.get("/me")
 async def get_me(user: UserDep) -> MeResponse:
     return MeResponse(email=user.email)
+
+
+@router.delete("/me", status_code=204)
+async def delete_me(user: UserDep, session: SessionDep) -> Response:
+    await account.delete(session, user)
+    return Response(status_code=204)
 
 
 @router.get("/credentials")

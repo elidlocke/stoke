@@ -1,0 +1,11 @@
+---
+// A business detail from src/business.ts, or a TODO placeholder while it's empty.
+import Todo from './Todo.astro'
+
+interface Props {
+  value: string | number
+  label: string
+}
+const { value, label } = Astro.props
+---
+{value ? value : <Todo>{label}</Todo>}

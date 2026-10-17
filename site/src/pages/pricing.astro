@@ -1,0 +1,144 @@
+---
+import { count, FREE_LIMIT, signupUrl, TIERS, TRIAL_DAYS, yearly } from '../business'
+import Support from '../components/Support.astro'
+import Base from '../layouts/Base.astro'
+
+const top = TIERS[TIERS.length - 1].limit
+
+const includes = [
+  'What you really take home, after every fee',
+  'Everyone who pays you, across all your Stripe accounts',
+  'Who’s ready for the next step, and who’s at risk',
+  'Actions: thank-yous, upgrades, cross-sells, win-backs',
+  'Personal notes, sent from your own Gmail',
+  'Free subscribers ranked from your Substack export',
+]
+---
+<Base
+  title="Pricing"
+  description={`Stoke is free until you pass ${count(FREE_LIMIT)} paying customers a month, and every paid plan starts with ${TRIAL_DAYS} days free. Every plan includes everything.`}
+>
+  <section class="hero">
+    <div class="wrap">
+      <h1 data-reveal>Free until you pass {count(FREE_LIMIT)} paying customers a month.</h1>
+      <p class="lede" data-reveal data-delay="1">
+        Every paid plan starts with {TRIAL_DAYS} days free. Every plan includes everything, and you only pay more as
+        your audience grows.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="tiers">
+        {TIERS.map((t, i) => (
+          <div class:list={['tier', { featured: t.featured }]} data-reveal data-delay={i}>
+            {t.featured && <span class="badge">Most writers start here</span>}
+            <h2>{t.name}</h2>
+            <p class="tier-limit">Up to {count(t.limit)} paying customers a month</p>
+            <p class="price">
+              {t.price === 0 ? 'Free' : <>${t.price}<small> / month</small></>}
+            </p>
+            <p class="trial">{t.price === 0 ? 'Free for good' : `First ${TRIAL_DAYS} days free`}</p>
+            <p class="yearly">{t.price === 0 ? 'No card needed' : `or $${yearly(t)} a year, two months free`}</p>
+            <p class="tier-blurb">{t.blurb}</p>
+            <a class:list={['button', { primary: t.featured }]} href={signupUrl(t.id)}>Get started</a>
+          </div>
+        ))}
+      </div>
+
+      <div class="includes" data-reveal>
+        <h2>Every plan includes</h2>
+        <ul>
+          {includes.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+
+      <p class="bigger" data-reveal>
+        More than {count(top)} paying customers a month? Let’s talk: <Support />
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap faq">
+      <h2>Questions</h2>
+      <details>
+        <summary>How does the free trial work?</summary>
+        <p>
+          Every paid plan is free for your first {TRIAL_DAYS} days, with everything included. You’re only charged once the
+          trial ends, and if you cancel before then, you pay nothing.
+        </p>
+      </details>
+      <details>
+        <summary>How do you count paying customers?</summary>
+        <p>
+          Each month, we count the people who paid you anything that month, across every Stripe account you connect: a
+          subscription renewal, a course, a download, a tip. Someone who pays you twice in a month counts once.
+        </p>
+        <p>
+          So an annual subscriber counts only in the month they pay. A reader who paid for the year in March isn’t
+          counted again until next March. Free trials, complimentary subscriptions and failed payments don’t count.
+        </p>
+      </details>
+      <details>
+        <summary>What happens when I grow past my plan?</summary>
+        <p>
+          Congratulations first. We’ll email you before anything changes, and nothing switches off mid-month.
+        </p>
+      </details>
+      <details>
+        <summary>Can I cancel anytime?</summary>
+        <p>
+          Yes. Your plan stays active until the end of the period you’ve paid for, and isn’t renewed after that. See the
+          <a href="/refunds/">refund and cancellation policy</a>.
+        </p>
+      </details>
+      <details>
+        <summary>Do you give refunds?</summary>
+        <p>
+          Every paid plan starts with {TRIAL_DAYS} days free, so you can be sure before you pay. After that, payments
+          aren’t refunded, but you can cancel anytime and you won’t be charged again. If we ever charge you in error,
+          email <Support /> and we’ll put it right.
+        </p>
+      </details>
+      <details>
+        <summary>What does “read-only” mean for my Stripe account?</summary>
+        <p>
+          Stoke’s Stripe app can read payments, customers and subscriptions. It can’t move money, issue refunds or change
+          anything. You approve its permissions on Stripe, and can uninstall it there at any time.
+        </p>
+      </details>
+      <details>
+        <summary>Does Stoke read my email?</summary>
+        <p>
+          No. Stoke asks Google only for permission to send, so it can send the notes you approve. It can’t read, search
+          or delete your mail.
+        </p>
+      </details>
+      <details>
+        <summary>Can I send from something other than Gmail?</summary>
+        <p>
+          Not yet. Stoke sends through Gmail, including Google Workspace accounts on your own domain, so notes come from
+          the address your readers already know.
+        </p>
+        <p>
+          Use Outlook, Fastmail or another provider? <Support subject="Please add support for my email provider" label="Tell us which one" />,
+          and we’ll let you know when it’s ready.
+        </p>
+      </details>
+      <details>
+        <summary>Which platforms does Stoke work with?</summary>
+        <p>
+          Stoke works with any platform where your customers pay into your own Stripe account, and Substack is one of
+          them. Some platforms collect payments in their own account and pay you out later. Those platforms don’t share
+          customer details with your Stripe account, so Stoke can’t see those customers.
+        </p>
+      </details>
+      <details>
+        <summary>Do Stoke’s prices include sales tax or VAT?</summary>
+        <p>No. Sales tax or VAT is added to your Stoke plan at checkout, where it applies.</p>
+      </details>
+    </div>
+  </section>
+</Base>

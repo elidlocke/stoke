@@ -42,6 +42,10 @@ services:
         value: stoke-y4sf.onrender.com
       - key: CORS_ORIGIN
         value: https://stoke-y4sf.onrender.com
+      # The public site (the stoke-site service below): legal links and where signing out lands. Built into the
+      # frontend. Update it if Render gives the site a different address.
+      - key: VITE_SITE_URL
+        value: https://stoke-site.onrender.com
       # Google OAuth client for sending from Gmail (docs/gmail-setup.md).
       - key: GOOGLE_CLIENT_ID
         sync: false
@@ -57,3 +61,37 @@ services:
         sync: false
       - key: VITE_AUTH0_AUDIENCE
         sync: false
+
+  # The public site (site/): landing, pricing and policies, as static files on Render's CDN.
+  - type: web
+    name: stoke-site
+    runtime: static
+    buildCommand: cd site && npm ci && npm run build
+    staticPublishPath: ./site/dist
+    buildFilter:
+      paths:
+        - site/**
+        - frontend/src/tokens.css
+        - frontend/public/favicon.svg
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # The app (the stoke service above), for Sign in and Get started.
+      - key: PUBLIC_APP_URL
+        value: https://stoke-y4sf.onrender.com
+      # The site's own address, for canonical links and the sitemap. Update it if Render assigns a different one.
+      - key: SITE_URL
+        value: https://stoke-site.onrender.com
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

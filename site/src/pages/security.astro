@@ -1,0 +1,77 @@
+---
+import Support from '../components/Support.astro'
+import { BUSINESS } from '../business'
+import Legal from '../layouts/Legal.astro'
+---
+<Legal
+  title="Security"
+  description="How Stoke protects your Stripe connection, your readers’ details and your Gmail."
+  updated="October 16, 2026"
+>
+  <p>
+    Stoke holds details about the people who pay you. Here’s how we look after them. For what we collect and why, see
+    the <a href="/privacy/">privacy policy</a>.
+  </p>
+
+  <h2>Least access</h2>
+  <ul>
+    <li>
+      <strong>Stripe:</strong> Stoke connects through its own Stripe app, with read-only permissions you review on
+      Stripe before approving. It can’t move money, refund, or change anything. Uninstalling the app in Stripe cuts
+      Stoke off, and Stoke double-checks with Stripe before acting on an uninstall notice, so a forged one can’t
+      disconnect you.
+    </li>
+    <li>
+      <strong>Gmail:</strong> Stoke asks for the <code>gmail.send</code> permission only. It can send the notes you
+      approve, and nothing else: it can’t read, search or delete your mail.
+    </li>
+    <li><strong>Substack:</strong> Stoke never signs in to Substack. It uses only the export file you upload.</li>
+  </ul>
+
+  <h2>Encryption</h2>
+  <ul>
+    <li>Everything travels over HTTPS.</li>
+    <li>
+      Stripe and Gmail access tokens are encrypted at rest with AES-256-GCM, each under its own key, which is itself
+      encrypted by a master key kept outside the database. A copy of the database alone reveals nothing.
+    </li>
+    <li>
+      Your customers’ and free subscribers’ email addresses and names, and the text of your notes, are encrypted the
+      same way.
+    </li>
+    <li>Tokens are never sent back to your browser.</li>
+  </ul>
+
+  <h2>Collecting as little as possible</h2>
+  <ul>
+    <li>
+      Stoke keeps an allowlist of fields from Stripe. Addresses, phone numbers, card details (beyond the brand and
+      country), metadata, free-text cancellation comments and dispute evidence are never stored.
+    </li>
+    <li>
+      Customer pages use an opaque id, so email addresses never appear in URLs, browser history or server logs.
+    </li>
+    <li>The Substack file you upload is never stored, only the free subscribers’ details listed in the privacy policy.</li>
+  </ul>
+
+  <h2>Accounts and isolation</h2>
+  <ul>
+    <li>Sign-in is handled by Auth0. Stoke never sees or stores your password.</li>
+    <li>Every request is checked against your session, and your data is only ever read for your own account.</li>
+    <li>The app refuses requests addressed to any host it doesn’t serve, which blocks a class of attacks from other websites.</li>
+  </ul>
+
+  <h2>Deleting data</h2>
+  <ul>
+    <li>Removing a Stripe account in Settings deletes its imported data once no other Stoke user has it connected.</li>
+    <li>Disconnecting Gmail revokes Stoke’s access at Google and deletes the token.</li>
+    <li>Deleting your account removes everything above. See the <a href="/privacy/#retention">privacy policy</a> for backups.</li>
+  </ul>
+
+  <h2>Reporting a problem</h2>
+  <p>
+    If you think you’ve found a security issue, email <Support />
+    with “Security” in the subject. Please give us a chance to fix it before telling others. We’ll reply within two
+    business days.
+  </p>
+</Legal>
